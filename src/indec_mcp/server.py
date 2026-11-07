@@ -17,7 +17,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 from pydantic import Field
 
-from .mirror import IPC_MEASURES, IPC_REGIONS, Limits, Mirror, QueryError
+from . import topics
+from .mirror import IPC_MEASURES, IPC_REGIONS, SOURCE, Limits, Mirror, QueryError
 
 INSTRUCTIONS = """\
 Datos oficiales del INDEC (Argentina) desde un mirror local del Catálogo API-INDEC: inflación \
@@ -29,7 +30,10 @@ Cómo usar estas herramientas:
 2. Para inflación (general, núcleo, por división o región) usá `inflation_series`.
 3. Para comparar series (salario real, salarios vs canasta, regiones, actividad vs precios) usá \
 `compare_series`.
-4. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
+4. Comercio exterior (exportaciones/importaciones por país, rubro, mes o año): `foreign_trade`. \
+Acepta nombres ("Brasil", "MOA", "bienes de capital"); `trade_codes` busca códigos.
+5. Población (país, provincia o departamento; por sexo o edad; 2022-2040): `population`.
+6. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
 exactos de cada dimensión; los filtros distinguen mayúsculas) → `query_sql`.
 
 Reglas al responder:
@@ -37,6 +41,7 @@ Reglas al responder:
 - Si `observaciones` dice "Dato provisorio" (u otro signo), aclaralo.
 - Usá las variaciones publicadas (v_m, v_ia, v_acum) en lugar de calcularlas desde el índice: \
 INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), decilo explícitamente.
+- En comercio exterior, las sumas excluyen filas confidenciales (secreto estadístico): decilo.
 - Períodos: 'AAAAMM' mensual, 'AAAA1S' semestral, 'AAAA1T' trimestral.
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
@@ -120,6 +125,56 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    def foreign_trade(
+        flow: Annotated[str, Field(description="'exportaciones' (valor FOB) o 'importaciones' (valor CIF).")] = "exportaciones",
+        country: Annotated[str | None, Field(description="País por nombre, ej. 'Brasil', 'China', 'Estados Unidos'.")] = None,
+        category: Annotated[
+            str | None,
+            Field(description="Exportaciones: rubro ('Productos primarios', 'MOA', 'MOI', 'Combustible y energía') "
+                  "o subrubro. Importaciones: uso económico ('Bienes de capital', 'Bienes intermedios', ...) o "
+                  "gran categoría económica."),
+        ] = None,
+        start: Annotated[str | None, Field(description="Desde, 'AAAA-MM' o 'AAAA'. Por defecto, últimos 12 meses.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA-MM' o 'AAAA' (inclusive).")] = None,
+        group_by: Annotated[
+            str, Field(description="'mes' (por defecto), 'anio', 'pais', 'categoria' o 'subcategoria'.")
+        ] = "mes",
+        top: Annotated[int, Field(description="Máximo de filas al agrupar por país o categoría (1-50).")] = 15,
+    ) -> dict[str, Any]:
+        """Comercio exterior de bienes desde 1986: millones de USD y toneladas, agrupado por mes, año,
+        país o categoría, con nombres en lugar de códigos. Las sumas excluyen las filas confidenciales
+        (secreto estadístico) y el resultado informa cuántas son: mencionalo al citar montos."""
+        return topics.foreign_trade(mirror, flow, country, category, start, end, group_by, top)
+
+    @server.tool(annotations=READ_ONLY)
+    @_tool_errors
+    def trade_codes(
+        query: Annotated[str, Field(description="Nombre o código a buscar, ej. 'china', 'carnes', 'MOI'.")],
+    ) -> list[dict[str, Any]]:
+        """Busca códigos del diccionario de comercio exterior (países, rubros, subrubros, usos económicos
+        y grandes categorías económicas). Ignora mayúsculas y acentos."""
+        return topics.trade_codes(mirror, query)
+
+    @server.tool(annotations=READ_ONLY)
+    @_tool_errors
+    def population(
+        place: Annotated[
+            str | None,
+            Field(description="Vacío o 'Argentina' para el país; una provincia ('Córdoba', 'CABA'); o un "
+                  "departamento ('Rosario'; si es ambiguo, 'San Martín, Mendoza')."),
+        ] = None,
+        year: Annotated[int | None, Field(description="Año (2022-2040; departamentos hasta 2035). Por defecto, el actual.")] = None,
+        by: Annotated[
+            str, Field(description="'sexo' (por defecto), 'edad' (grupos de 5 años; país y provincias) o "
+                       "'departamento' (los departamentos de una provincia).")
+        ] = "sexo",
+    ) -> dict[str, Any]:
+        """Población estimada y proyectada al 1° de julio (base Censo 2022) para el país, una provincia
+        o un departamento, con apertura por sexo, grupos de edad o departamentos."""
+        return topics.population(mirror, place, year, by)
+
+    @server.tool(annotations=READ_ONLY)
+    @_tool_errors
     def list_datasets() -> list[dict[str, Any]]:
         """Los datasets del mirror (nombre de tabla SQL, descripción, filas, último período, estado
         de sincronización)."""
@@ -149,7 +204,120 @@ def create_server(mirror: Mirror) -> MCPServer:
     ) -> dict[str, Any]:
         return mirror.query(sql)
 
+    _register_prompts_and_resources(server, mirror)
     return server
+
+
+GUIDE = """# Guía de uso — INDEC MCP (no oficial)
+
+## Cómo citar
+Siempre "Fuente: INDEC", el dataset y el período de cada cifra. Este servicio no es oficial.
+
+## Períodos
+- Mensual: `AAAAMM` (ej. `202609`). Semestral: `AAAA1S`/`AAAA2S`. Trimestral: `AAAA1T`…`AAAA4T`.
+- Los datasets tienen distinta fecha de último dato (ej. salarios va un mes detrás del IPC).
+
+## Tipos de indicador (IPC, salarios, canastas)
+`Indice` nivel · `v_m` variación mensual · `v_ia` interanual · `v_acum` acumulada en el año ·
+`Incidencia_*` aporte a la variación del nivel general. Preferí las variaciones publicadas a calcularlas.
+
+## Signos convencionales del INDEC
+Cada columna de valor tiene una gemela `<col>_null` que explica un valor nulo:
+
+| Signo | Significado |
+|---|---|
+| `*` | Dato provisorio |
+| `**` | Dato preliminar |
+| `e` | Estimado por extrapolación o proyección |
+| `i` | Estimado por imputación |
+| `u` | Calidad inferior al estándar |
+| `-` | Cero absoluto |
+| `.` | Dato no registrado |
+| `...` | No disponible a la fecha |
+| `///` | No corresponde presentar |
+| `s` | Confidencial (secreto estadístico) |
+
+La columna `observaciones` puede decir "Dato provisorio": mencionalo.
+
+## Comercio exterior
+Cerca de la mitad de las filas de detalle son confidenciales (`s`). Las sumas de este servicio las
+excluyen, así que pueden ser menores que los totales oficiales.
+"""
+
+
+def _register_prompts_and_resources(server: MCPServer, mirror: Mirror) -> None:
+    @server.resource("indec://guia", name="guia", title="Guía de uso y signos convencionales",
+                     description="Cómo citar, formatos de período, tipos de indicador y signos del INDEC.",
+                     mime_type="text/markdown")
+    def guide() -> str:
+        return GUIDE
+
+    @server.resource("indec://datasets", name="datasets", title="Catálogo de datasets",
+                     description="Datasets del mirror con filas, último período y estado.",
+                     mime_type="application/json")
+    def catalog() -> list[dict]:
+        try:
+            return mirror.datasets()
+        except QueryError as e:
+            return [{"error": str(e)}]
+
+    @server.resource("indec://dataset/{table}", name="dataset", title="Esquema de un dataset",
+                     description="Columnas, valores de dimensiones y ejemplos de un dataset.",
+                     mime_type="application/json")
+    def dataset(table: str) -> dict:
+        try:
+            return mirror.describe(table)
+        except QueryError as e:
+            return {"error": str(e)}
+
+    @server.prompt(title="Informe de inflación")
+    def informe_inflacion() -> str:
+        """Informe breve del último IPC: general, núcleo, divisiones que más subieron y regiones."""
+        return (
+            "Armá un informe breve de la inflación del último mes publicado por el INDEC: variación mensual, "
+            "interanual y acumulada del nivel general y de la núcleo (`latest_indicators`); las divisiones que "
+            "más subieron en el mes (`query_sql` sobre ipc_nacional, nivel 'División', región 'Nacional', "
+            "tipo v_m); y la comparación entre regiones (`compare_series` con 'ipc@GBA', 'ipc@Noreste', etc.). "
+            "Terminá con una tabla y la fuente con el período."
+        )
+
+    @server.prompt(title="Panorama económico")
+    def panorama_economico() -> str:
+        """Resumen de la economía con las últimas cifras de cada área."""
+        return (
+            "Hacé un panorama de la economía argentina con las últimas cifras del INDEC: inflación, actividad "
+            "(EMAE), salarios, canasta básica, pobreza y desocupación (`latest_indicators`). Agregá si los "
+            "salarios le ganan a la inflación en los últimos 12 meses (`compare_series` con ['salarios', 'ipc']). "
+            "Indicá el período de cada cifra y cuáles son provisorias."
+        )
+
+    @server.prompt(title="Evolución de la pobreza")
+    def evolucion_pobreza() -> str:
+        """Serie semestral de pobreza e indigencia y su relación con la canasta básica."""
+        return (
+            "Mostrá la evolución semestral de la pobreza y la indigencia en personas y hogares desde 2016 "
+            "(`query_sql` sobre pobreza_eph, ordenado por período), señalando los datos provisorios. Contextualizá "
+            "con la variación interanual de la canasta básica total (`compare_series` con ['cbt', 'salarios'])."
+        )
+
+    @server.prompt(title="Comercio exterior con un país")
+    def comercio_exterior_pais(pais: str) -> str:
+        """Exportaciones e importaciones con un país, por año y por rubro."""
+        return (
+            f"Analizá el comercio exterior de Argentina con {pais}: exportaciones e importaciones por año en los "
+            f"últimos 5 años (`foreign_trade` con country='{pais}', group_by='anio'), el saldo, y qué rubros se "
+            f"exportan (group_by='categoria'). Aclarar que las sumas excluyen filas confidenciales."
+        )
+
+    @server.prompt(title="Salario real")
+    def salario_real(desde: str = "2024-01") -> str:
+        """Si los salarios le ganaron a la inflación desde una fecha, por sector."""
+        return (
+            f"¿Los salarios le ganaron a la inflación desde {desde}? Usá `compare_series` con measure='base100' "
+            f"y start='{desde}' para ['salarios', 'ipc'], ['salarios:registrado', 'ipc'] y "
+            f"['salarios:no registrado', 'ipc']. Mostrá el resultado relativo de cada uno, aclarando que es "
+            f"un cálculo propio y el rezago de los salarios no registrados."
+        )
 
 
 def main() -> None:

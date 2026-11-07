@@ -20,8 +20,8 @@ def run(coro):
 
 def test_exposes_read_only_tools(server):
     tools = {t.name: t for t in run(server.list_tools())}
-    assert set(tools) == {"latest_indicators", "inflation_series", "compare_series", "list_datasets",
-                          "describe_dataset", "query_sql"}
+    assert set(tools) == {"latest_indicators", "inflation_series", "compare_series", "foreign_trade",
+                          "trade_codes", "population", "list_datasets", "describe_dataset", "query_sql"}
     assert all(t.annotations.read_only_hint and not t.annotations.open_world_hint for t in tools.values())
     assert set(tools["inflation_series"].input_schema["properties"]) == {"category", "region", "measures", "start", "end"}
     assert "500 filas" in tools["query_sql"].description
@@ -37,3 +37,16 @@ def test_tool_call_returns_structured_content(server):
 def test_data_errors_become_tool_errors_the_model_can_read(server):
     with pytest.raises(ToolError, match="Solo se permiten consultas SELECT"):
         run(server.call_tool("query_sql", {"sql": "DROP TABLE ipc_nacional"}))
+
+
+def test_prompts_and_resources_are_exposed(server):
+    prompts = {p.name for p in run(server.list_prompts())}
+    assert prompts == {"informe_inflacion", "panorama_economico", "evolucion_pobreza",
+                       "comercio_exterior_pais", "salario_real"}
+    msg = run(server.get_prompt("comercio_exterior_pais", {"pais": "Chile"})).messages[0]
+    assert "Chile" in msg.content.text and "confidenciales" in msg.content.text
+    assert {str(r.uri) for r in run(server.list_resources())} == {"indec://guia", "indec://datasets"}
+    guide = run(server.read_resource("indec://guia"))[0].content
+    assert "secreto estadístico" in guide
+    schema = run(server.read_resource("indec://dataset/pobreza_eph"))[0].content
+    assert "area_geografica_nom" in schema
