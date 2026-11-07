@@ -9,7 +9,7 @@ An AI and tooling layer over the official **[Catálogo API-INDEC](https://api.in
 - ✅ Research ([docs/api-research.md](docs/api-research.md))
 - ✅ **Sync job**: mirrors all 19 datasets (about 2 M rows) into one DuckDB file
 - ✅ **Local MCP server** (stdio) over the mirror, tested end to end with Claude Code
-- ⏳ Hosted MCP on Railway with rate limits
+- ✅ **Hosted MCP**: `https://indec-mcp-production.up.railway.app/mcp`, with rate limits and a daily sync ([docs/deploy.md](docs/deploy.md))
 
 ## MCP server
 

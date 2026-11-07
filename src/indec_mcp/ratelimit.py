@@ -4,9 +4,14 @@ Layers, all checked per request to the MCP endpoint:
 - per client IP, short window (bursts) and long window (daily cap);
 - global, so a flood from many IPs still can't exceed what one small instance can serve.
 
-Client IP comes from X-Forwarded-For, counting `proxy_hops` entries from the right: the
-rightmost entries are appended by proxies we trust (Railway's edge), the leftmost ones can be
-forged by the client. If we ever scale past one instance, move buckets to Redis.
+Client IP, in order of preference:
+- `ip_header` (e.g. `x-real-ip`): a single header that the platform's edge sets to the real
+  client IP. On Railway this is the documented header; docs/deploy.md records whether a
+  client-supplied value is overwritten in production.
+- otherwise X-Forwarded-For, counting `proxy_hops` entries from the right (for proxies that
+  append); the leftmost entries can be forged by the client.
+- otherwise the socket peer.
+If we ever scale past one instance, move buckets to Redis.
 """
 
 from __future__ import annotations
@@ -86,7 +91,15 @@ class RateLimiter:
         return 0.0
 
 
-def client_ip(scope: dict, proxy_hops: int) -> str:
+def client_ip(scope: dict, proxy_hops: int, ip_header: str | None = None) -> str:
+    if ip_header:
+        wanted = ip_header.lower().encode("latin-1")
+        for name, value in scope.get("headers", []):
+            if name == wanted:
+                ip = value.decode("latin-1").strip()
+                if ip:
+                    return ip
+                break
     if proxy_hops > 0:
         for name, value in scope.get("headers", []):
             if name == b"x-forwarded-for":
@@ -104,11 +117,20 @@ def _anon(ip: str) -> str:
 
 
 class RateLimitMiddleware:
-    def __init__(self, app, limiter: RateLimiter, *, path_prefix: str = "/mcp", proxy_hops: int = 1):
+    def __init__(
+        self,
+        app,
+        limiter: RateLimiter,
+        *,
+        path_prefix: str = "/mcp",
+        proxy_hops: int = 1,
+        ip_header: str | None = None,
+    ):
         self.app = app
         self.limiter = limiter
         self.path_prefix = path_prefix
         self.proxy_hops = proxy_hops
+        self.ip_header = ip_header
 
     async def __call__(self, scope, receive, send):
         if (
@@ -117,7 +139,7 @@ class RateLimitMiddleware:
             or scope["method"] == "OPTIONS"
         ):
             return await self.app(scope, receive, send)
-        ip = client_ip(scope, self.proxy_hops)
+        ip = client_ip(scope, self.proxy_hops, self.ip_header)
         wait = self.limiter.check(ip)
         if not wait:
             return await self.app(scope, receive, send)

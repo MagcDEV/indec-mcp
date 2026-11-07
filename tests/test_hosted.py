@@ -55,7 +55,8 @@ def test_landing_page_advertises_https_endpoint(db):
 
 
 def test_per_ip_burst_is_enforced_and_other_ips_are_unaffected(db):
-    with client(db, per_ip_burst=3, per_ip_per_minute=3) as c:
+    # X-Forwarded-For mode (CLIENT_IP_HEADER unset), for proxies that append.
+    with client(db, per_ip_burst=3, per_ip_per_minute=3, ip_header=None) as c:
         a = {**H, "x-forwarded-for": "203.0.113.1"}
         codes = [c.post("/mcp", headers=a, json=INIT).status_code for _ in range(4)]
         assert codes == [200, 200, 200, 429]
@@ -86,3 +87,13 @@ def test_settings_from_env(monkeypatch, tmp_path):
     s = Settings.from_env()
     assert (s.port, s.per_ip_per_minute, s.sync_enabled) == (9999, 5.0, False)
     assert s.db_path == tmp_path / "x.duckdb"
+
+
+def test_default_keys_rate_limits_on_x_real_ip(db):
+    with client(db, per_ip_burst=2, per_ip_per_minute=2) as c:
+        h = {**H, "x-real-ip": "203.0.113.50"}
+        # Varying X-Forwarded-For (as Railway's internal hops do) must not reset the bucket.
+        codes = [c.post("/mcp", headers={**h, "x-forwarded-for": f"100.64.0.{i}"}, json=INIT).status_code
+                 for i in range(3)]
+        assert codes == [200, 200, 429]
+        assert c.post("/mcp", headers={**H, "x-real-ip": "203.0.113.51"}, json=INIT).status_code == 200

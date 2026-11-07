@@ -77,3 +77,11 @@ def _scope(xff=None, client=("10.0.0.1", 1234)):
 )
 def test_client_ip_counts_trusted_hops_from_the_right(xff, hops, expected):
     assert client_ip(_scope(xff), hops) == expected
+
+
+def test_platform_ip_header_takes_precedence_over_forwarded_for():
+    scope = {"headers": [(b"x-forwarded-for", b"1.1.1.1, 100.64.0.7"), (b"x-real-ip", b"203.0.113.7")],
+             "client": ("10.0.0.1", 1)}
+    assert client_ip(scope, 1, "X-Real-IP") == "203.0.113.7"
+    # Header configured but absent: fall back to X-Forwarded-For hops.
+    assert client_ip({"headers": [(b"x-forwarded-for", b"100.64.0.7")], "client": None}, 1, "x-real-ip") == "100.64.0.7"

@@ -45,7 +45,11 @@ class Settings:
     per_ip_per_day: float = 2000
     global_per_second: float = 20
     global_burst: float = 100
-    proxy_hops: int = 1  # Railway's edge appends the real client IP to X-Forwarded-For
+    # Railway documents X-Real-IP as the client IP set by its edge (see docs/deploy.md). Its
+    # X-Forwarded-For rightmost entry is an internal hop that varies per request, so it can't key
+    # rate limits. Set CLIENT_IP_HEADER="" to fall back to X-Forwarded-For + TRUSTED_PROXY_HOPS.
+    ip_header: str | None = "x-real-ip"
+    proxy_hops: int = 1
     max_connections: int = 64
     sync_enabled: bool = True
     sync_hour_utc: int = 22
@@ -61,6 +65,7 @@ class Settings:
             per_ip_per_day=_env_float("RATE_PER_IP_PER_DAY", cls.per_ip_per_day),
             global_per_second=_env_float("RATE_GLOBAL_PER_SECOND", cls.global_per_second),
             global_burst=_env_float("RATE_GLOBAL_BURST", cls.global_burst),
+            ip_header=os.environ.get("CLIENT_IP_HEADER", cls.ip_header) or None,
             proxy_hops=int(os.environ.get("TRUSTED_PROXY_HOPS", cls.proxy_hops)),
             max_connections=int(os.environ.get("MAX_CONNECTIONS", cls.max_connections)),
             sync_enabled=os.environ.get("SYNC_ENABLED", "1") != "0",
@@ -126,7 +131,9 @@ def build_app(mirror: Mirror, settings: Settings, scheduler: SyncScheduler | Non
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
         host="0.0.0.0",
     )
-    return RateLimitMiddleware(app, settings.limiter(), path_prefix="/mcp", proxy_hops=settings.proxy_hops)
+    return RateLimitMiddleware(
+        app, settings.limiter(), path_prefix="/mcp", proxy_hops=settings.proxy_hops, ip_header=settings.ip_header
+    )
 
 
 def main() -> None:
