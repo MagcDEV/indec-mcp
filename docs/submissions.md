@@ -20,7 +20,7 @@ Everything needed to list the hosted server. Prepared 2026-11-07, from each dire
 | Glama | ✅ Server and connector listed, both **rated A** |
 | awesome-mcp-servers | ⏳ [PR #18854](https://github.com/punkpeye/awesome-mcp-servers/pull/18854): Glama server badge added, waiting for maintainers |
 | awesome-remote-mcp-servers | ⏳ [PR #4128](https://github.com/punkpeye/awesome-remote-mcp-servers/pull/4128): Glama connector badge added, waiting for maintainers |
-| MCP Market | To do (you): web form with the repo URL |
+| MCP Market | ⏳ **Submitted to the free queue** on 2026-11-07 (repo URL). Their estimate is ~4–6 weeks; they'll email mguevarac.dev@gmail.com when it's live |
 
 ## Order and status
 
