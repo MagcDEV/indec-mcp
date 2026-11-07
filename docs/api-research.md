@@ -16,7 +16,7 @@ On 2026-11-02 INDEC launched the **Catálogo API-INDEC**, its first official API
 ### Auth
 
 - Every data endpoint needs `Authorization: Bearer <JWT>`. A request without one returns `401 {"code":"42501","message":"permission denied for schema api"}`.
-- To get a token: sign up with email, name and organization, verify with an emailed OTP, then generate the token from your profile. **It is shown only once.** It **expires after 12 months**. Generating a new one immediately revokes the old one.
+- To get a token: sign up with email, name and organization, verify with an emailed OTP, then generate the token from your profile. **It is shown only once.** The FAQ says it expires after 12 months, but the real one expires after **6** (see below). Generating a new one immediately revokes the old one.
 - The **OpenAPI 3.1 spec is public**: `GET https://api.indec.gob.ar/v1/` works without a token. A snapshot is in [`spec/indec-openapi.json`](../spec/indec-openapi.json), and `scripts/fetch-spec.sh` refreshes it.
 
 ### Datasets (19 endpoints, 7 INDEC directorates)
@@ -61,13 +61,65 @@ See [datasets.md](datasets.md) for the full generated list, with columns and pri
 - The [terms](https://api.indec.gob.ar/ayuda/terminos) frame the data as open data published "to facilitate access and reuse". **They do not forbid redistribution or proxying.**
 - The [FAQ](https://api.indec.gob.ar/ayuda/faq) says *"existen límites de uso … consulte los términos de uso para conocer los límites específicos"*, **but the terms page lists no limits.** That gap needs an answer.
 
-## Unknown (needs a token, or a question to INDEC)
+## Measured with a token (2026-11-07)
 
-- [ ] Actual rate limits, and whether the API sends `RateLimit`/`Retry-After` headers. Run `INDEC_TOKEN=… scripts/probe.sh`.
-- [ ] Row count per dataset. Exports since 1986 by country and sub-sector is probably the big one. `probe.sh` reports this through `Content-Range`.
-- [ ] Update cadence and timing: does the API update on the release day of each INDEC report?
-- [ ] Is it allowed to serve data fetched with one personal token to many end users (a public MCP or mirror)? **Email `ces@indec.gob.ar` before launching anything public.**
-- [ ] Whether there are account types or tiers (the FAQ mentions "su tipo de cuenta").
+These come from `scripts/probe.sh` and manual queries, using a `Personal` account.
+
+### Token
+
+- The JWT payload has `role: "basic"`, which suggests account tiers.
+- The token was issued 2026-11-07 and **expires 2027-05-06, which is 6 months, not the 12 the FAQ states.** Plan for rotation twice a year.
+- Signup asks for `account_type` (Personal / Empresarial / Educativa / ONG / Gubernamental / Otro) and at least one `intended_use`. The options come from `GET /api/auth/lookups`. There is no captcha.
+
+### Size and speed
+
+| Dataset | Rows | Latest period |
+|---|---:|---|
+| `comercio_exterior_exportacion_bienes` | 779,536 | 202609 |
+| `comercio_exterior_importacion_bienes` | 390,315 | 202609 |
+| `redeterminacion_precios_contratos_obras_publicas` | 236,192 | 202609 |
+| `sipm_precios_mayoristas` | 234,260 | 202609 |
+| `ipc_nacional` | 234,198 | 202609 |
+| `ipi_manufacturero` | 41,667 | 202609 |
+| `proyecciones_poblacion_jurisdiccion_2022_2040` | 19,152 | 2040 |
+| `ipi_minero` | 17,784 | 202609 |
+| `estimaciones_poblacion_departamento_2022_2035` | 14,784 | 2035 |
+| `icc_precios_construccion` | 14,017 | 202609 |
+| `estimador-…-sectores` | 8,512 | 202608 |
+| `proyecciones_poblacion_nacional_2022_2040` | 3,838 | 2040 |
+| `indice_salarios` | 3,406 | 202608 |
+| `valorizacion_canastas_cba_cbt` | 1,638 | 202609 |
+| `estimador-…-nivel-general` | 1,632 | 202608 |
+| `comercio_exterior_nomenclaturas` | 325 | — |
+| `canasta-crianza` | 81 | 202609 |
+| `mercado_trabajo_eph` | 41 | 20262T |
+| `pobreza_eph` | 20 | 20261S |
+| **Total** | **≈2.0 M** | |
+
+- Copying everything is about **2,010 requests** of 1000 rows each. At 1 request/s that takes about 35 minutes, and incremental syncs (`periodo=gt.<last>`) are much smaller. The whole dataset fits easily in a DuckDB file.
+- Latency is 70–110 ms per request. The exception is a request on exports with `Prefer: count=exact`, which takes 0.6 s because counting 780k rows is expensive, so avoid exact counts on the big tables.
+- `limit=5000` still returns 1000 rows. The cap is enforced.
+
+### Rate limits
+
+- No `RateLimit-*` or `Retry-After` headers were returned.
+- 30 back-to-back requests all returned `200`. Either the limit is higher than that, or it is enforced some other way. I didn't push harder on purpose. We still need to ask INDEC what the real limit is.
+
+### Data shape (IPC example, period 202609)
+
+- `periodo` is a string in three formats: `YYYYMM` for monthly data, `YYYY{1,2}S` for half-yearly (`20261S`), and `YYYY{1-4}T` for quarterly (`20262T`). `fecha` is a string in two population tables and an integer in the third.
+- A single month of IPC is **more than 1000 rows** (regions × levels × 8 indicator types), so even "just this month" needs pagination or tight filters.
+- `tipo_de_indicador` values: `Indice`, `v_m` (change from the previous month), `v_ia` (year on year), `v_acum` (year to date), `Incidencia_m`, `Incidencia_ia`, `Incidencia_acum`, and `Precio promedio`.
+- `nivel` values: `Nivel General`, `División`, `Grupo`, `Clase`, `Categoría` (Núcleo/Regulados/Estacional/Bienes/Servicios), and `Producto`. Regions are `Nacional`, `GBA`, `Pampeana`, `Noreste`, `Noroeste`, `Cuyo` and `Patagonia`.
+- **Filters are case-sensitive.** The headline needs `nivel=eq.Nivel General` (capital G), while its `descripcion` is "Nivel general". An LLM writing raw filters will get this wrong.
+- There is a `valor_null` column next to `valor`, which carries the null-reason sign, alongside `observaciones`.
+- For the record, September 2026 national CPI was +1.9% m/m, +33.4% y/y and +23.6% year to date, with core inflation at +1.7% m/m.
+
+## Still unknown
+
+- [ ] The real rate limit, and whether `basic` accounts have a lower one than other tiers.
+- [ ] Update timing: does the API update at the same moment INDEC publishes each report?
+- [ ] Whether it is OK to serve data fetched with one personal token to many end users (a public MCP or mirror). **Email `ces@indec.gob.ar` before launching anything public.**
 
 ## Existing community work (as of 2026-11-07)
 

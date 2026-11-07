@@ -20,4 +20,4 @@ scripts/fetch-spec.sh                 # refresh the spec snapshot and regenerate
 INDEC_TOKEN=... scripts/probe.sh      # row counts, latency and rate-limit headers for each dataset
 ```
 
-To get a token, sign up at <https://api.indec.gob.ar>, verify with the OTP, and generate it from your profile. It is shown once and expires after 12 months.
+To get a token, sign up at <https://api.indec.gob.ar>, verify with the OTP, and generate it from your profile. It is shown once. The FAQ says it lasts 12 months, but the one we got expires after 6. Keep it in `.env`, which git ignores; `.env.example` shows the format.

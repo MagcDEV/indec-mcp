@@ -97,7 +97,7 @@ A public page that does the chat itself. **This one costs LLM money**, so it nee
 
 | Phase | Deliverable | Notes |
 |---|---|---|
-| 0 | Get a token, run `scripts/probe.sh`, email `ces@indec.gob.ar` | Fill in the unknowns in [api-research.md](api-research.md). Ask about rate limits and whether a public mirror is OK |
+| 0 | ~~Get a token, run `scripts/probe.sh`~~ ✅ done 2026-11-07. Still to do: email `ces@indec.gob.ar` | The data is about 2.0 M rows (about 2,010 pages of 1000). Ask about rate limits and whether a public mirror is OK |
 | 1 | Sync job → normalized DuckDB/Parquet (#2) | GitHub Action cron. Token stored as a secret |
 | 2 | Local stdio MCP over the mirror (#1) | Iterate on tool design with Claude Code or Claude Desktop |
 | 3 | Hosted remote MCP with rate limits | Railway/Fly + Cloudflare |
