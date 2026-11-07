@@ -231,8 +231,11 @@ class UsageRecorder:
                     since,
                 ),
                 "clients": q(
-                    "SELECT coalesce(client, '?') AS client, count(DISTINCT user) AS users, count(*) AS requests "
-                    "FROM events WHERE day >= ? GROUP BY 1 ORDER BY users DESC, requests DESC LIMIT 20", since,
+                    # Provider traffic (Claude.ai, ChatGPT) arrives from shared, rotating IPs: count its
+                    # requests, not IP "users".
+                    "SELECT coalesce(client, '?') AS client, coalesce(max(via), 'direct') AS via, "
+                    "count(DISTINCT CASE WHEN via IS NULL THEN user END) AS users, count(*) AS requests "
+                    "FROM events WHERE day >= ? GROUP BY 1 ORDER BY requests DESC LIMIT 20", since,
                 ),
                 "tools": q(
                     "SELECT tool, count(*) AS calls, count(DISTINCT user) AS users, "
