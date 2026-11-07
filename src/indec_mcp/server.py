@@ -18,7 +18,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import Icon, ToolAnnotations
 from pydantic import Field
 
-from . import topics
+from . import indices, topics
 from .mirror import IPC_MEASURES, IPC_REGIONS, SOURCE, Limits, Mirror, QueryError
 
 INSTRUCTIONS = """\
@@ -34,7 +34,9 @@ Cómo usar estas herramientas:
 4. Comercio exterior (exportaciones/importaciones por país, rubro, mes o año): `foreign_trade`. \
 Acepta nombres ("Brasil", "MOA", "bienes de capital"); `trade_codes` busca códigos.
 5. Población (país, provincia o departamento; por sexo o edad; 2022-2040): `population`.
-6. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
+6. Precios mayoristas: `wholesale_prices`. Costo de la construcción: `construction_costs`. Producción \
+industrial y minera: `industrial_production`.
+7. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
 exactos de cada dimensión; los filtros distinguen mayúsculas) → `query_sql`.
 
 Reglas al responder:
@@ -47,7 +49,7 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 REPO_URL = "https://github.com/MagcDEV/indec-mcp"
 ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
 
@@ -133,7 +135,9 @@ def create_server(mirror: Mirror) -> MCPServer:
             list[str],
             Field(description="2 a 4 ids de serie mensual: 'ipc[:categoría][@región]' (ej. 'ipc', "
                   "'ipc:Núcleo', 'ipc:Alimentos@GBA'), 'salarios[:sector]' (sector: registrado, no registrado, "
-                  "privado registrado, público), 'cbt' / 'cba' (canastas básicas GBA, en pesos), 'emae'."),
+                  "privado registrado, público), 'cbt' / 'cba' (canastas básicas GBA, en pesos), 'emae', "
+                  "'ipim' / 'ipib' / 'ipp' (mayoristas), 'icc[:categoría]' (construcción, ej. 'icc:Mano de obra'), "
+                  "'ipi[:rama]' (industria) e 'ipi_minero'."),
         ],
         measure: Annotated[
             str,
@@ -201,6 +205,87 @@ def create_server(mirror: Mirror) -> MCPServer:
         """Población estimada y proyectada al 1° de julio (base Censo 2022) para el país, una provincia
         o un departamento, con apertura por sexo, grupos de edad o departamentos."""
         return topics.population(mirror, place, year, by)
+
+    @server.tool(title="Precios mayoristas (IPIM, IPIB, IPP)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def wholesale_prices(
+        index: Annotated[
+            str,
+            Field(description="'IPIM' (internos al por mayor, nacionales e importados, con impuestos; por defecto), "
+                  "'IPIB' (básicos, sin impuestos) o 'IPP' (del productor, solo nacionales)."),
+        ] = "IPIM",
+        category: Annotated[
+            str | None,
+            Field(description="Vacío = nivel general. Origen: 'Productos nacionales' (N) / importados (I). Sector "
+                  "o rubro CIIU, ej. 'Productos agropecuarios', 'Productos manufacturados', 'Energía eléctrica', "
+                  "'Cereales y oleaginosas'. Si es ambiguo, pasá el código."),
+        ] = None,
+        measures: Annotated[
+            list[str] | None,
+            Field(description="'v_m' mensual, 'v_ia' interanual, 'v_acum' acumulada, 'indice', 'incidencia'. "
+                  "Por defecto ['v_m', 'v_ia']."),
+        ] = None,
+        start: Annotated[str | None, Field(description="Desde, 'AAAA-MM'. Por defecto, últimos 13 meses.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA-MM' (inclusive).")] = None,
+    ) -> dict[str, Any]:
+        """Precios mayoristas (Sistema de Índices de Precios Mayoristas, desde dic-2015): IPIM, IPIB o IPP,
+        por nivel general, origen (nacional/importado), sector o rubro. Variaciones publicadas por el INDEC."""
+        key = (index or "IPIM").strip().upper()
+        if key not in indices.WHOLESALE_INDICES:
+            raise QueryError("index debe ser 'IPIM', 'IPIB' o 'IPP'.")
+        return indices.series(mirror, key, category, measures, start, end)
+
+    @server.tool(title="Costo de la construcción (ICC)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def construction_costs(
+        category: Annotated[
+            str | None,
+            Field(description="Vacío = nivel general. Capítulos: 'Materiales', 'Mano de obra', 'Gastos generales'. "
+                  "Grupos o ítems de obra, ej. 'Albañilería', 'Instalación eléctrica', 'Pintura', 'Estructura'; "
+                  "o un material."),
+        ] = None,
+        measures: Annotated[
+            list[str] | None,
+            Field(description="'v_m' mensual, 'v_ia' interanual, 'v_acum' acumulada, 'indice', 'incidencia'. "
+                  "Por defecto ['v_m', 'v_ia']."),
+        ] = None,
+        start: Annotated[str | None, Field(description="Desde, 'AAAA-MM'. Por defecto, últimos 13 meses.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA-MM' (inclusive).")] = None,
+    ) -> dict[str, Any]:
+        """Índice del costo de la construcción (ICC) del Gran Buenos Aires, desde nov-2015: nivel general,
+        materiales, mano de obra, gastos generales, ítems de obra y materiales por producto."""
+        return indices.series(mirror, "ICC", category, measures, start, end)
+
+    @server.tool(title="Producción industrial (IPI manufacturero y minero)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def industrial_production(
+        sector: Annotated[str, Field(description="'manufacturera' (por defecto) o 'minera'.")] = "manufacturera",
+        category: Annotated[
+            str | None,
+            Field(description="Vacío = nivel general. Manufactura: división o rama, ej. 'Alimentos y bebidas', "
+                  "'Vehículos automotores, carrocerías, remolques y autopartes', 'Industrias metálicas básicas', "
+                  "'Vino'. Minería: ej. 'Petróleo crudo', 'Gas natural', 'Extracción de minerales metalíferos'."),
+        ] = None,
+        measures: Annotated[
+            list[str] | None,
+            Field(description="'v_ia' interanual y 'v_acum' acumulada (serie original); 'v_m' mensual "
+                  "(desestacionalizada); 'indice', 'indice_desestacionalizado', 'v_m_tendencia', "
+                  "'indice_tendencia'. Por defecto ['v_ia', 'v_m']."),
+        ] = None,
+        start: Annotated[str | None, Field(description="Desde, 'AAAA-MM'. Por defecto, últimos 13 meses.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA-MM' (inclusive).")] = None,
+    ) -> dict[str, Any]:
+        """Índice de producción industrial (IPI): manufacturero desde 2016 (por división y rama) y minero desde
+        2017 (petróleo, gas, minerales, rocas). Variaciones publicadas por el INDEC."""
+        key = {"manufacturera": "IPI_MANUFACTURERO", "manufacturero": "IPI_MANUFACTURERO", "industria":
+               "IPI_MANUFACTURERO", "minera": "IPI_MINERO", "minero": "IPI_MINERO", "mineria": "IPI_MINERO",
+               "minería": "IPI_MINERO"}.get((sector or "manufacturera").strip().lower())
+        if key is None:
+            raise QueryError("sector debe ser 'manufacturera' o 'minera'.")
+        return indices.series(mirror, key, category, measures, start, end)
 
     @server.tool(title="Listar datasets", annotations=READ_ONLY)
     @_tool_errors

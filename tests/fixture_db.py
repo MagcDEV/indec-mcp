@@ -166,6 +166,58 @@ def _template() -> Path:
          for sc, sn in (("1", "Mujer"), ("2", "Varon"))],
     )
 
+    # Wholesale prices: one row per index (IPIM/IPIB/IPP); 'Productos importados' exists as Origen and Sector.
+    con.execute("""CREATE TABLE sipm_precios_mayoristas (operativo VARCHAR, indicador VARCHAR, clasificador VARCHAR,
+        nivel VARCHAR, codigo_apertura VARCHAR, descripcion VARCHAR, periodo VARCHAR, tipo_de_indicador VARCHAR,
+        region VARCHAR, valor DOUBLE, observaciones VARCHAR)""")
+    sipm = []
+    cats = [("SIPM 93", "Nivel general", "NG", "Nivel general"), ("SIPM 93", "Origen", "N", "Productos nacionales"),
+            ("SIPM 93", "Origen", "I", "Productos importados"), ("SIPM 93", "Sector", "3", "Productos importados"),
+            ("CIIU3", "Clase", "0111", "Cereales y oleaginosas")]
+    for i, per in enumerate(months("202501", "202609")):
+        obs = "* Dato provisorio" if per == "202609" else None
+        for ind, bump in (("IPIM", 0.0), ("IPIB", 0.1), ("IPP", 0.2)):
+            for clas, niv, cod, desc in cats:
+                for tipo, val in (("v_m", 2.0 + bump), ("v_ia", 30.0 + bump), ("v_acum", 20.0), ("Indice", 1000.0 + 10 * i)):
+                    sipm.append(("SIPM", ind, clas, niv, cod, desc, per, tipo, "Total del país", val, obs))
+    con.executemany("INSERT INTO sipm_precios_mayoristas VALUES (?,?,?,?,?,?,?,?,?,?,?)", sipm)
+
+    con.execute("""CREATE TABLE icc_precios_construccion (indicador VARCHAR, clasificador VARCHAR, nivel VARCHAR,
+        codigo_apertura VARCHAR, descripcion VARCHAR, periodo VARCHAR, tipo_de_indicador VARCHAR, region VARCHAR,
+        valor DOUBLE, observaciones VARCHAR)""")
+    icc = []
+    for i, per in enumerate(months("202501", "202609")):
+        for niv, cod, desc, vm in (("Nivel general", "0", "Nivel general", 1.5), ("Capitulo", "02", "Mano de obra", 1.6),
+                                   ("Ítems", "IT-12", "Pintura", 0.5)):
+            for tipo, val in (("v_m", vm), ("v_ia", 31.0), ("v_acum", 25.0), ("Indice", 500.0 + 5 * i)):
+                icc.append(("ICC", "ICC 93", niv, cod, desc, per, tipo, "GBA", val, None))
+    con.executemany("INSERT INTO icc_precios_construccion VALUES (?,?,?,?,?,?,?,?,?,?)", icc)
+
+    # Industrial production: original series for every branch; seasonally adjusted only for 2-digit divisions.
+    con.execute("""CREATE TABLE ipi_manufacturero (periodo VARCHAR, indicador VARCHAR, cuadro_web VARCHAR,
+        codigo_clanae_2004 VARCHAR, descripcion VARCHAR, serie VARCHAR, tipo_de_indicador VARCHAR, valor DOUBLE)""")
+    ipi = []
+    for i, per in enumerate(months("202501", "202609")):
+        for cod, desc, division in (("D", "IPI Manufacturero - Nivel general", True), ("15", "Alimentos y bebidas", True),
+                                    ("15521", "Vino", False)):
+            ipi += [(per, "IPI manufacturero", "Cuadro 2", cod, desc, "Serie original", "Índice", 120.0 + i),
+                    (per, "IPI manufacturero", "Cuadro 3", cod, desc, "Serie original", "Variación interanual", -1.7801)]
+            if division:
+                ipi += [(per, "IPI manufacturero", "Cuadro 5", cod, desc, "Serie desestacionalizada", "Variación intermensual", 0.7314),
+                        (per, "IPI manufacturero", "Cuadro 5", cod, desc, "Serie desestacionalizada", "Índice", 115.0 + i)]
+    con.executemany("INSERT INTO ipi_manufacturero VALUES (?,?,?,?,?,?,?,?)", ipi)
+    con.execute("""CREATE TABLE ipi_minero (periodo VARCHAR, indicador VARCHAR, cuadro_web VARCHAR,
+        codigo_clanae_2010 VARCHAR, codigo_cpc_2_1 VARCHAR, descripcion VARCHAR, serie VARCHAR,
+        tipo_de_indicador VARCHAR, valor DOUBLE)""")
+    mine = []
+    for i, per in enumerate(months("202501", "202609")):
+        mine += [(per, "IPI Minero", "Cuadro 2", "B", "-", "Nivel General - IPI Minero", "Serie Original", "Índice", 140.0 + i),
+                 (per, "IPI Minero", "Cuadro 3", "B", "-", "Nivel General - IPI Minero", "Serie Original", "Variación interanual", 7.13),
+                 (per, "IPI Minero", "Cuadro 1", "B", "-", "Nivel General - IPI Minero", "Serie Desestacionalizada", "Variación intermensual", -0.09),
+                 (per, "IPI Minero", "Cuadro 1", "B", "-", "Nivel General - IPI Minero", "Serie Desestacionalizada", "Índice", 146.0 + i),
+                 (per, "IPI Minero", "Cuadro 3", "06.100", "12010", "Petróleo crudo", "Serie Original", "Variación interanual", 15.57)]
+    con.executemany("INSERT INTO ipi_minero VALUES (?,?,?,?,?,?,?,?,?)", mine)
+
     for table, summary in [
         ("ipc_nacional", "Índice de Precios al Consumidor (IPC)"),
         ("estimador_mensual_de_actividad_economica_nivel_general", "EMAE nivel general"),

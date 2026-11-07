@@ -47,7 +47,7 @@ Portal: [claude.ai/directory/manage](https://claude.ai/directory/manage) → **S
 | Portal step | Answer |
 |---|---|
 | **1. Connection** | `https://indec-mcp-production.up.railway.app/mcp`, or pick the INDEC custom connector you already added |
-| **2. Tools** | The 9 tools sync automatically, all read-only and all titled. There are also 5 prompts and 3 resources |
+| **2. Tools** | The 12 tools sync automatically, all read-only and all titled. There are also 5 prompts and 3 resources |
 | **3. Listing: name** (≤100) | `INDEC Argentina (no oficial)`. Don't put "MCP" or "Server" in the name, and keep "no oficial" so it's not mistaken for INDEC itself |
 | **3. Listing: one-liner** (≤200) | `Argentina's official statistics from INDEC — inflation, wages, poverty, jobs, trade and population — with sources and periods cited. Unofficial; no signup.` |
 | **3. Listing: categories** | Data & Analytics · Finance · Research (choose whatever the portal offers that's closest) |
@@ -75,7 +75,7 @@ Portal: [claude.ai/directory/manage](https://claude.ai/directory/manage) → **S
 > - exports and imports since 1986 by country and product
 > - population projections to 2040 by province and department
 >
-> Tools: headline indicators; CPI series; side-by-side comparisons, such as real wages or basket vs. salary; foreign trade with plain-name lookup ("China", "MOA"); population; and a sandboxed read-only SQL tool for anything else.
+> Tools: headline indicators; CPI, wholesale-price, construction-cost and industrial-production series; side-by-side comparisons, such as real wages or basket vs. salary; foreign trade with plain-name lookup ("China", "MOA"); population; and a sandboxed read-only SQL tool for anything else.
 >
 > Built for correct answers. It uses INDEC's published percentage changes rather than recomputing them, labels any computed figure (such as real wages) as computed, and reports the rows withheld for statistical secrecy, so a partial sum is never presented as a total.
 >

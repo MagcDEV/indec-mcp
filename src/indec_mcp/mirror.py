@@ -36,6 +36,12 @@ IPC_MEASURES = {
 IPC_REGIONS = ("Nacional", "GBA", "Pampeana", "Noreste", "Noroeste", "Cuyo", "Patagonia")
 
 
+_INDEX_KINDS = {"ipim": "IPIM", "ipib": "IPIB", "ipp": "IPP", "icc": "ICC", "ipi": "IPI_MANUFACTURERO",
+                "ipi_manufacturero": "IPI_MANUFACTURERO", "ipi_minero": "IPI_MINERO"}
+_INDEX_LABELS = {"IPIM": "IPIM", "IPIB": "IPIB", "IPP": "IPP", "ICC": "Costo construcción",
+                 "IPI_MANUFACTURERO": "IPI manufacturero", "IPI_MINERO": "IPI minero"}
+
+
 class QueryError(ValueError):
     """A user-facing error: bad SQL, unknown dataset, ambiguous filter. Message is safe to show."""
 
@@ -493,10 +499,30 @@ class Mirror:
             )
             mapping, table = {"index": "index", "v_m": "v_m", "v_ia": "v_ia"}, \
                 "estimador_mensual_de_actividad_economica_nivel_general"
+        elif kind in _INDEX_KINDS:
+            from . import indices  # local import: indices imports this module
+
+            ds = indices.DATASETS[_INDEX_KINDS[kind]]
+            cat = indices._resolve(self, ds, rest or None)
+            is_ipi = ds.key.startswith("IPI_")
+            idx = ds.measures["indice_desestacionalizado" if is_ipi else "indice"].sql
+            desc = "Nivel general" if "nivel general" in cat["descripcion"].lower() else cat["descripcion"]
+            label = f"{_INDEX_LABELS[ds.key]}: {desc}"
+            if is_ipi:
+                notes.append(f"{_INDEX_LABELS[ds.key]}: índice y v_m de la serie desestacionalizada; v_ia, de la original.")
+            obs = "observaciones" if ds.has_observaciones else "NULL"
+            rows = self._records(
+                f"SELECT periodo, CASE WHEN {idx} THEN 'index' WHEN {ds.measures['v_m'].sql} THEN 'v_m' "
+                f"WHEN {ds.measures['v_ia'].sql} THEN 'v_ia' END AS t, valor, {obs} AS observaciones "
+                f"FROM {ds.table} WHERE {ds.scope_sql} AND " + " AND ".join(f"{c} = ?" for c in ds.id_cols),
+                [cat[c] for c in ds.id_cols], max_rows=10_000,
+            )
+            mapping, table = {"index": "index", "v_m": "v_m", "v_ia": "v_ia"}, ds.table
         else:
             raise QueryError(
                 f"Serie desconocida {spec!r}. Usá: 'ipc[:categoría][@región]' (ej. 'ipc:Alimentos@GBA'), "
-                "'salarios[:registrado|no registrado|privado registrado|público]', 'cbt', 'cba', 'emae'."
+                "'salarios[:registrado|no registrado|privado registrado|público]', 'cbt', 'cba', 'emae', "
+                "'ipim', 'ipib', 'ipp', 'icc[:categoría]' (ej. 'icc:Mano de obra'), 'ipi[:rama]', 'ipi_minero'."
             )
 
         data: dict[str, dict] = {}
@@ -714,6 +740,25 @@ class Mirror:
                 "empleo_informal_pct": t["tasa_de_empleo_informal"],
                 "observaciones": t["observaciones"],
             }
+
+        from . import indices  # local import: indices imports this module
+
+        for key, label, wanted in (
+            ("IPIM", "precios_mayoristas_ipim", ("v_m", "v_ia")),
+            ("ICC", "costo_construccion_icc_gba", ("v_m", "v_ia")),
+            ("IPI_MANUFACTURERO", "industria_ipi_manufacturero", ("v_ia", "v_m")),
+            ("IPI_MINERO", "mineria_ipi_minero", ("v_ia", "v_m")),
+        ):
+            try:
+                last = indices.series(self, key, None, list(wanted))["rows"][-1]
+            except QueryError:
+                continue
+            names = {"v_m": "mensual_pct", "v_ia": "interanual_pct"}
+            out[label] = {"periodo": last["periodo"], **{names[w]: last.get(w) for w in wanted}}
+            if last.get("observaciones"):
+                out[label]["observaciones"] = last["observaciones"]
+            if key.startswith("IPI_"):
+                out[label]["nota"] = "interanual: serie original; mensual: serie desestacionalizada"
 
         synced = self._records("SELECT CAST(max(synced_at) AS VARCHAR) AS s FROM _datasets")
         out["synced_at"] = synced[0]["s"] if synced else None
