@@ -15,11 +15,12 @@ Everything needed to list the hosted server. Prepared 2026-11-07, from each dire
 
 | Directory | Status |
 |---|---|
-| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp` v0.4.0, active |
-| awesome-mcp-servers | ⏳ [PR #18854](https://github.com/punkpeye/awesome-mcp-servers/pull/18854). `check-submission` passes. **Needs a Glama server badge** (see section 3) |
-| awesome-remote-mcp-servers | ⏳ [PR #4128](https://github.com/punkpeye/awesome-remote-mcp-servers/pull/4128). `check-submission` passes. **Needs a Glama connector badge** (see section 3) |
-| Glama | ⏳ Not listed yet. Submit manually (section 3) |
-| Anthropic Connectors Directory, MCP Market | To do (you) |
+| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp`, active. The listing says v0.4.0; the server runs v0.4.4 at the same URL. Updating the label needs a fresh `mcp-publisher login github` |
+| Anthropic Connectors Directory | ⏳ **In review**: submitted through the portal as "INDEC Argentina (no oficial)", slug `indec-argentina` |
+| Glama | ✅ Server and connector listed, both **rated A** |
+| awesome-mcp-servers | ⏳ [PR #18854](https://github.com/punkpeye/awesome-mcp-servers/pull/18854): Glama server badge added, waiting for maintainers |
+| awesome-remote-mcp-servers | ⏳ [PR #4128](https://github.com/punkpeye/awesome-remote-mcp-servers/pull/4128): Glama connector badge added, waiting for maintainers |
+| MCP Market | To do (you): web form with the repo URL |
 
 ## Order and status
 
