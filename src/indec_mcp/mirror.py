@@ -43,8 +43,10 @@ class QueryError(ValueError):
 class Limits:
     max_rows: int = 500
     timeout_s: float = 5.0
-    threads: int = 2
-    memory_limit: str = "1GB"
+    threads: int = 2  # DuckDB threads per query
+    memory_limit: str = "1GB"  # shared by all queries
+    max_concurrent: int = 4  # queries running at once; more wait up to `queue_timeout_s`
+    queue_timeout_s: float = 3.0
 
 
 def format_period(p: Any) -> str | None:
@@ -89,7 +91,8 @@ class Mirror:
     def __init__(self, db_path: str | os.PathLike, limits: Limits = Limits()):
         self.db_path = Path(db_path)
         self.limits = limits
-        self._lock = threading.Lock()
+        self._swap_lock = threading.Lock()  # guards connection (re)open only
+        self._slots = threading.BoundedSemaphore(limits.max_concurrent)
         self._con: duckdb.DuckDBPyConnection | None = None
         self._version: tuple[int, int] | None = None
         self._dims_cache: dict[str, dict] = {}
@@ -101,37 +104,52 @@ class Mirror:
         return (st.st_ino, st.st_mtime_ns)
 
     def _connection(self) -> duckdb.DuckDBPyConnection:
-        """Reopen when `indec-sync` has atomically replaced the file."""
-        if not self.db_path.exists():
-            raise QueryError(f"No mirror at {self.db_path}. Run `indec-sync` first.")
-        version = self._file_version()
-        if self._con is None or version != self._version:
-            if self._con is not None:
-                self._con.close()
+        """Reopen when `indec-sync` has atomically replaced the file.
+
+        The previous connection is not closed explicitly: cursors from it may still be running.
+        It is released once they finish (the replaced file's inode lives until then).
+        """
+        try:
+            version = self._file_version()
+        except FileNotFoundError:
+            raise QueryError(
+                "Los datos todavía no están disponibles (primera sincronización en curso). "
+                "Reintentá en unos minutos."
+            ) from None
+        with self._swap_lock:
+            if self._con is not None and version == self._version:
+                return self._con
+            # A fresh in-memory instance per file version, with the mirror ATTACHed: duckdb.connect()
+            # on the same path would return the cached instance still bound to the replaced file.
             con = duckdb.connect(
-                str(self.db_path),
-                read_only=True,
-                config={
-                    "enable_external_access": False,
-                    "threads": self.limits.threads,
-                    "memory_limit": self.limits.memory_limit,
-                },
+                ":memory:", config={"threads": self.limits.threads, "memory_limit": self.limits.memory_limit}
             )
+            path = str(self.db_path).replace("'", "''")
+            con.execute(f"ATTACH '{path}' AS mirror (READ_ONLY)")
+            con.execute("SET enable_external_access = false")
             con.execute("SET lock_configuration = true")
             self._con, self._version = con, version
-            self._dims_cache.clear()
-        return self._con
+            self._dims_cache = {}
+            return con
+
+    def _cursor(self) -> duckdb.DuckDBPyConnection:
+        cur = self._connection().cursor()
+        cur.execute("USE mirror")  # cursors don't inherit the parent's USE
+        return cur
 
     def close(self) -> None:
-        with self._lock:
+        with self._swap_lock:
             if self._con is not None:
                 self._con.close()
                 self._con = None
 
     def _run(self, sql: str, params: list | None = None, max_rows: int | None = None) -> dict:
         cap = max_rows or self.limits.max_rows
-        with self._lock:
-            cur = self._connection().cursor()
+        if not self._slots.acquire(timeout=self.limits.queue_timeout_s):
+            raise QueryError("El servidor está ocupado. Reintentá en unos segundos.")
+        try:
+            # One cursor per query: cursors run in parallel, and interrupt only their own query.
+            cur = self._cursor()
             timer = threading.Timer(self.limits.timeout_s, cur.interrupt)
             timer.start()
             try:
@@ -147,6 +165,8 @@ class Mirror:
             finally:
                 timer.cancel()
                 cur.close()
+        finally:
+            self._slots.release()
         truncated = len(rows) > cap
         rows = [[_jsonable(v) for v in r] for r in rows[:cap]]
         return {"columns": columns, "rows": rows, "row_count": len(rows), "truncated": truncated}
@@ -240,8 +260,11 @@ class Mirror:
     def query(self, sql: str) -> dict:
         sql = sql.strip().rstrip(";")
         try:
-            with self._lock:
-                statements = self._connection().extract_statements(sql)
+            cur = self._cursor()
+            try:
+                statements = cur.extract_statements(sql)
+            finally:
+                cur.close()
         except duckdb.Error as e:
             raise QueryError(f"Error de SQL: {e}") from None
         if len(statements) != 1:

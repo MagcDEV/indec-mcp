@@ -12,7 +12,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-SPEC_SNAPSHOT = Path(__file__).resolve().parents[2] / "spec" / "indec-openapi.json"
+_PACKAGED_SPEC = Path(__file__).resolve().parent / "indec-openapi.json"  # wheel installs
+_REPO_SPEC = Path(__file__).resolve().parents[2] / "spec" / "indec-openapi.json"  # source checkout
+SPEC_SNAPSHOT = _PACKAGED_SPEC if _PACKAGED_SPEC.exists() else _REPO_SPEC
 
 # Query params PostgREST adds to every endpoint; not data columns.
 _STD_PARAMS = {"select", "order", "limit", "offset", "Prefer"}

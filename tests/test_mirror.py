@@ -80,7 +80,7 @@ def test_reopens_after_the_file_is_atomically_replaced(mirror, tmp_path):
 
 
 def test_missing_mirror_gives_a_clear_error(tmp_path):
-    with pytest.raises(QueryError, match="indec-sync"):
+    with pytest.raises(QueryError, match="no están disponibles"):
         Mirror(tmp_path / "nope.duckdb").datasets()
 
 
@@ -167,3 +167,49 @@ def test_period_formatting_round_trips():
     assert format_period("20262T") == "2026 T2"
     assert parse_period("2026-9") == "202609"
     assert parse_period(None) is None
+
+
+# -- concurrency ------------------------------------------------------------------------------
+
+SLOW = "SELECT sum(a.range * b.range) FROM range(100000000) a, range(100000) b"
+
+
+def _in_background(fn):
+    import threading
+
+    box = {}
+    t = threading.Thread(target=lambda: box.setdefault("err", _catch(fn)))
+    t.start()
+    return t, box
+
+
+def _catch(fn):
+    try:
+        fn()
+    except QueryError as e:
+        return e
+
+
+def test_fast_queries_are_not_blocked_by_a_slow_one(tmp_path):
+    import time
+
+    m = Mirror(build(tmp_path / "indec.duckdb"), Limits(timeout_s=1.5, max_concurrent=2))
+    t, box = _in_background(lambda: m.query(SLOW))
+    time.sleep(0.2)
+    t0 = time.monotonic()
+    assert m.query("SELECT 42")["rows"] == [[42]]
+    assert time.monotonic() - t0 < 0.5  # did not wait for the slow query's 1.5s timeout
+    t.join()
+    assert "límite" in str(box["err"])
+
+
+def test_when_all_slots_are_busy_callers_get_a_clear_error(tmp_path):
+    import time
+
+    m = Mirror(build(tmp_path / "indec.duckdb"), Limits(timeout_s=1.0, max_concurrent=1, queue_timeout_s=0.1))
+    t, _ = _in_background(lambda: m.query(SLOW))
+    time.sleep(0.2)
+    with pytest.raises(QueryError, match="ocupado"):
+        m.query("SELECT 1")
+    t.join()
+    assert m.query("SELECT 1")["rows"] == [[1]]  # free again

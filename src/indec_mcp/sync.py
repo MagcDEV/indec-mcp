@@ -93,6 +93,7 @@ def sync(
     *,
     only: set[str] | None = None,
     now: datetime | None = None,
+    work_dir: Path | None = None,
 ) -> SyncReport:
     datasets = parse_spec(spec)
     if only:
@@ -114,7 +115,7 @@ def sync(
             con.execute(f"ATTACH {_lit(str(db_path))} AS old (READ_ONLY)")
         old_tables = _old_tables(con) if has_old else set()
 
-        with tempfile.TemporaryDirectory(prefix="indec-sync-") as work:
+        with tempfile.TemporaryDirectory(prefix="indec-sync-", dir=work_dir) as work:
             for ds in datasets:
                 selected = not only or ds.table in only or ds.path.strip("/") in only
                 if not selected:
@@ -278,6 +279,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--delay", type=float, default=0.2, help="seconds between requests (default 0.2)")
     p.add_argument("--spec", choices=["live", "snapshot"], default="live",
                    help="use the live OpenAPI spec (default) or spec/indec-openapi.json")
+    p.add_argument("--work-dir", type=Path, default=None,
+                   help="where to stage downloaded rows (default: system temp; ~150 MB for exports)")
     p.add_argument("-v", "--verbose", action="store_true")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
@@ -303,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
                 log.warning("could not fetch live spec (%s); using snapshot", e)
         spec = spec or load_snapshot()
         try:
-            report = sync(args.db, client, spec, only=only)
+            report = sync(args.db, client, spec, only=only, work_dir=args.work_dir)
         except AuthError as e:
             print(f"Auth failed, mirror left untouched. Token expired or revoked? {e}", file=sys.stderr)
             return 3
