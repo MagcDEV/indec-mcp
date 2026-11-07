@@ -3,7 +3,7 @@
   "name": "io.github.MagcDEV/indec-mcp",
   "title": "INDEC Argentina (no oficial)",
   "description": "Argentina's official statistics (INDEC): inflation, wages, poverty, trade, population. No signup.",
-  "version": "0.4.4",
+  "version": "0.5.0",
   "websiteUrl": "https://github.com/MagcDEV/indec-mcp",
   "repository": {
     "url": "https://github.com/MagcDEV/indec-mcp",
@@ -13,13 +13,26 @@
     {
       "src": "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png",
       "mimeType": "image/png",
-      "sizes": ["512x512"]
+      "sizes": [
+        "512x512"
+      ]
     }
   ],
   "remotes": [
     {
       "type": "streamable-http",
       "url": "https://indec-mcp-production.up.railway.app/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "indec-mcp",
+      "version": "0.5.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      }
     }
   ]
 }

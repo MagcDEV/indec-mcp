@@ -28,10 +28,11 @@ import duckdb
 
 from .catalog import Dataset, column_name, load_snapshot, parse_spec
 from .client import AuthError, IndecClient
+from .paths import default_db
 
 log = logging.getLogger("indec_mcp.sync")
 
-DEFAULT_DB = Path("data/indec.duckdb")
+DEFAULT_DB = default_db()
 
 _META_DDL = """
 CREATE TABLE _datasets (

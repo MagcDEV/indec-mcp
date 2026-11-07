@@ -1,11 +1,13 @@
-<img src="docs/img/icon.png" alt="" width="72" align="right">
+<img src="https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png" alt="" width="72" align="right">
 
 # INDEC en tu asistente de IA
+
+<!-- mcp-name: io.github.MagcDEV/indec-mcp -->
 
 **Preguntale a Claude, ChatGPT o Cursor por la inflación, los salarios, la pobreza, las exportaciones o la población de Argentina, y te responde con los datos oficiales del INDEC.**
 Sin registrarte, sin token y sin instalar nada: pegás una URL y listo.
 
-![Demo: se agrega el servidor y se pregunta cuánto se exportó a China](docs/img/demo.gif)
+![Demo: se agrega el servidor y se pregunta cuánto se exportó a China](https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/demo.gif)
 
 > Servicio **no oficial**, no afiliado al INDEC. Los datos son del INDEC (Catálogo API-INDEC). Fuente: INDEC.
 
@@ -13,7 +15,7 @@ Sin registrarte, sin token y sin instalar nada: pegás una URL y listo.
 
 ## Empezá en 1 minuto
 
-![Tres pasos: copiar la URL, agregarla como conector, preguntar](docs/img/conectar.png)
+![Tres pasos: copiar la URL, agregarla como conector, preguntar](https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/conectar.png)
 
 Esta es la única URL que necesitás:
 
@@ -85,6 +87,28 @@ En `.vscode/mcp.json`:
 Sirve cualquier cliente MCP que acepte servidores remotos por **Streamable HTTP**: usá la URL de arriba, sin autenticación.
 </details>
 
+<details>
+<summary><b>En tu computadora</b> (sin depender del servidor)</summary>
+
+Si preferís que las consultas corran en tu máquina, instalá [uv](https://docs.astral.sh/uv/) y usá el paquete [`indec-mcp`](https://pypi.org/project/indec-mcp/). Tampoco necesitás token:
+
+```bash
+claude mcp add indec -- uvx indec-mcp
+```
+
+En Claude Desktop, Cursor u otra aplicación:
+
+```json
+{
+  "mcpServers": {
+    "indec": { "command": "uvx", "args": ["indec-mcp"] }
+  }
+}
+```
+
+La primera vez descarga una copia de los datos (unos 12 MB) y después la actualiza sola, cada 6 horas como máximo. Las consultas se hacen en tu computadora. ¿Tenés tu propio token del INDEC y querés descargar todo directamente de la API? Mirá [docs/development.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/development.md#run-it-locally).
+</details>
+
 ---
 
 ## Qué le podés preguntar
@@ -105,16 +129,16 @@ En los clientes que muestran *prompts* MCP también tenés atajos listos: **info
 
 ## Ejemplos reales
 
-Respuestas sin editar, generadas con Claude Code conectado a este servidor ([transcripciones](docs/img/demos.json)):
+Respuestas sin editar, generadas con Claude Code conectado a este servidor ([transcripciones](https://github.com/MagcDEV/indec-mcp/blob/main/docs/img/demos.json)):
 
-![Salarios vs. inflación desde 2024](docs/img/demo-1.png)
+![Salarios vs. inflación desde 2024](https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/demo-1.png)
 
 <details>
 <summary>Más ejemplos: exportaciones a China · población e inflación de Córdoba</summary>
 
-![Exportaciones a China en 2025](docs/img/demo-2.png)
+![Exportaciones a China en 2025](https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/demo-2.png)
 
-![Población de Córdoba e inflación regional](docs/img/demo-3.png)
+![Población de Córdoba e inflación regional](https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/demo-3.png)
 </details>
 
 ---
@@ -126,13 +150,13 @@ Respuestas sin editar, generadas con Claude Code conectado a este servidor ([tra
 - **No esconde los huecos.** En comercio exterior, parte de las filas de detalle son confidenciales por secreto estadístico (en los meses recientes, cerca de la mitad). El servidor informa siempre cuántas son, así el asistente no presenta una suma parcial como si fuera el total.
 - **Es rápido y estable.** Trabaja sobre una copia de todos los datos que se actualiza cada día, así que no depende de que la API del INDEC (todavía en beta) esté funcionando en ese momento.
 - **Cuida al INDEC.** Haya los usuarios que haya, la API del INDEC recibe solo unas 2.000 consultas por día, las de la actualización diaria.
-- **Es código abierto** ([MIT](LICENSE)), y podés correrlo vos mismo ([docs/development.md](docs/development.md)).
+- **Es código abierto** ([MIT](https://github.com/MagcDEV/indec-mcp/blob/main/LICENSE)), y podés correrlo vos mismo ([docs/development.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/development.md)).
 
 ### Otras opciones
 
 | | Este servidor | [indec-mcp de SantinoSpingola](https://github.com/SantinoSpingola/indec-mcp) | [OpenArg](https://openarg.org/) |
 |---|---|---|---|
-| Cómo se usa | Pegás una URL | Se instala en tu computadora (Node) | Chat web, API y MCP |
+| Cómo se usa | Pegás una URL, o `uvx indec-mcp` en tu computadora | Se instala en tu computadora (Node) | Chat web, API y MCP |
 | Registro o token | **No hace falta** | Token propio del INDEC | Clave de OpenArg |
 | Uso gratis | 2.000 consultas por día | Lo que permita el INDEC | 200 consultas y 10 preguntas por mes |
 | Cobertura | INDEC, en profundidad | INDEC, en profundidad | Más de 33.000 datasets de 38 portales públicos |
@@ -174,28 +198,28 @@ Una pregunta normal usa pocas consultas, entre 2 y 10. Si llegás al límite, el
 - la app que usás (por ejemplo, "claude-code");
 - qué herramienta se usó y el tema general de la consulta (por ejemplo, "IPC Núcleo@GBA" o "China").
 
-Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni tu conversación. La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas. Política completa: [PRIVACY.md](PRIVACY.md).
+Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni tu conversación. La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas. Política completa: [PRIVACY.md](https://github.com/MagcDEV/indec-mcp/blob/main/PRIVACY.md).
 
 **¿Cuesta algo?** El servidor es gratis. Lo que uses de tu asistente de IA depende de tu plan con ese servicio.
 
 **¿Por qué una cifra no coincide exactamente con el informe del INDEC?** Puede pasar por redondeo cuando se calcula una variación, o porque en comercio exterior se excluyen los datos confidenciales. El asistente debería aclararlo en esos casos.
 
-**¿Puedo instalarlo en mi propio servidor?** Sí: [docs/development.md](docs/development.md) explica cómo correrlo y [docs/deploy.md](docs/deploy.md) cómo publicarlo.
+**¿Puedo instalarlo en mi propio servidor?** Sí: [docs/development.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/development.md) explica cómo correrlo y [docs/deploy.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/deploy.md) cómo publicarlo.
 
 ## Para desarrolladores
 
-- [docs/development.md](docs/development.md): arquitectura, herramientas MCP, cómo correrlo localmente y tests
-- [docs/deploy.md](docs/deploy.md): despliegue, configuración, protección contra abuso y operación
-- [docs/api-research.md](docs/api-research.md): cómo funciona la API del INDEC, con mediciones reales
-- [docs/datasets.md](docs/datasets.md): los 19 datasets con sus columnas
-- [docs/submissions.md](docs/submissions.md): material para publicar en directorios de MCP
-- [PRIVACY.md](PRIVACY.md): política de privacidad
+- [docs/development.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/development.md): arquitectura, herramientas MCP, cómo correrlo localmente y tests
+- [docs/deploy.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/deploy.md): despliegue, configuración, protección contra abuso y operación
+- [docs/api-research.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/api-research.md): cómo funciona la API del INDEC, con mediciones reales
+- [docs/datasets.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/datasets.md): los 19 datasets con sus columnas
+- [docs/submissions.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/submissions.md): material para publicar en directorios de MCP
+- [PRIVACY.md](https://github.com/MagcDEV/indec-mcp/blob/main/PRIVACY.md): política de privacidad
 
 ## Créditos
 
 - **Datos:** [INDEC](https://www.indec.gob.ar), mediante el [Catálogo API-INDEC](https://api.indec.gob.ar).
 - **Ideas:** varias funciones (buscar códigos de comercio exterior por nombre, informar los datos confidenciales, herramientas dedicadas por tema (precios mayoristas, construcción, industria, salarios, actividad, canastas, pobreza y empleo), los *prompts* y la guía de signos convencionales) están inspiradas en [SantinoSpingola/indec-mcp](https://github.com/SantinoSpingola/indec-mcp) (MIT). Se reimplementaron en Python, sin copiar su código.
-- **Licencia:** [MIT](LICENSE).
+- **Licencia:** [MIT](https://github.com/MagcDEV/indec-mcp/blob/main/LICENSE).
 
 ---
 
@@ -207,4 +231,6 @@ Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni t
 https://indec-mcp-production.up.railway.app/mcp
 ```
 
-The server holds a daily copy of all 19 datasets in INDEC's new API. It offers 17 read-only tools: headline indicators; one tool per topic (CPI, wages, basic and child-raising baskets, poverty, labor market, EMAE by sector, wholesale prices, construction costs, industrial production, foreign trade with name lookup, population); series comparison such as real wages; and sandboxed SQL. It also has 5 prompts and resources. Answers cite INDEC with the period of each figure and flag provisional or confidential data. Limits are 20 requests in a burst, 30 per minute and 2,000 per day for each client. The project is unofficial and MIT-licensed. Technical documentation is in [docs/development.md](docs/development.md).
+To run it on your own machine instead, use `uvx indec-mcp` (stdio). It downloads a ~12 MB copy of the data on first start and keeps it fresh, still with no token.
+
+The server holds a daily copy of all 19 datasets in INDEC's new API. It offers 17 read-only tools: headline indicators; one tool per topic (CPI, wages, basic and child-raising baskets, poverty, labor market, EMAE by sector, wholesale prices, construction costs, industrial production, foreign trade with name lookup, population); series comparison such as real wages; and sandboxed SQL. It also has 5 prompts and resources. Answers cite INDEC with the period of each figure and flag provisional or confidential data. Limits are 20 requests in a burst, 30 per minute and 2,000 per day for each client. The project is unofficial and MIT-licensed. Technical documentation is in [docs/development.md](https://github.com/MagcDEV/indec-mcp/blob/main/docs/development.md).

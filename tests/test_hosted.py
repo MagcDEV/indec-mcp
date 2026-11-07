@@ -44,7 +44,7 @@ def test_health_reports_readiness(db, tmp_path):
 def test_tools_explain_when_first_sync_is_pending(tmp_path):
     with client(tmp_path / "missing.duckdb") as c:
         res = c.post("/mcp", headers=H, json=CALL).json()["result"]
-        assert res["isError"] and "sincronización en curso" in res["content"][0]["text"]
+        assert res["isError"] and "inicial en curso" in res["content"][0]["text"]
 
 
 def test_landing_page_advertises_https_endpoint(db):

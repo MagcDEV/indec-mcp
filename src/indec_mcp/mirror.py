@@ -169,7 +169,7 @@ class Mirror:
             version = self._file_version()
         except FileNotFoundError:
             raise QueryError(
-                "Los datos todavía no están disponibles (primera sincronización en curso). "
+                "Los datos todavía no están disponibles (descarga o sincronización inicial en curso). "
                 "Reintentá en unos minutos."
             ) from None
         with self._swap_lock:

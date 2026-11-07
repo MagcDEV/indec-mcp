@@ -21,6 +21,7 @@ Production: **https://indec-mcp-production.up.railway.app/mcp** (Streamable HTTP
 | `SYNC_ENABLED` / `SYNC_HOUR_UTC` | 1 / 22 | Daily sync at 22:00 UTC (19:00 ART) |
 | `STATS_TOKEN` | — | **Secret.** Enables `GET /stats` (Bearer token). Without it, `/stats` returns 404. |
 | `USAGE_ENABLED` / `USAGE_RETENTION_DAYS` | 1 / 90 | Anonymous usage analytics (see below) |
+| `SNAPSHOT_ENABLED` | 1 | Serves `GET /snapshot/indec.duckdb.gz` for local installs (see below) |
 
 Railway's legacy config-as-code (`railway.toml`) is not used: new services can't opt into it, and it stops being read on 2026-12-01. Settings live on the service itself. They could be moved to Railway IaC (`.railway/railway.py`) later.
 
@@ -48,6 +49,15 @@ These clients call MCP servers from their providers' servers, not from the user'
   - OpenAI: [`chatgpt-connectors.json`](https://openai.com/chatgpt-connectors.json). It changes, so it's refreshed daily, cached in `/data/provider_ranges/`, with a bundled snapshot as fallback.
 - **Rate limits:** each provider gets one larger bucket shared by all its users (`RATE_PROVIDER_*`). Everyone else keeps the per-IP limits. The global limit applies to all traffic.
 - **Analytics:** these requests are stored with `via = anthropic|openai` and excluded from the "users" count. `/stats` reports them separately under `via_providers`, as volume.
+
+## Snapshot for local installs
+
+`uvx indec-mcp` (the PyPI package, over stdio) needs the mirror on the user's machine. Instead of asking every user for an INDEC token and a 15-minute sync, the hosted server publishes the mirror itself:
+
+- **`GET /snapshot/indec.duckdb.gz`.** The current mirror file, gzipped (31 MB → about 12 MB). `snapshot.py` rebuilds the gzip once per mirror version, in `/data/snapshot/` (about 1 s), and serves it with an `ETag`. A matching `If-None-Match` gets `304`.
+- **Client.** On first start, the local server downloads it to the user data dir (`~/.local/share/indec-mcp/` on Linux, `~/Library/Application Support/indec-mcp/` on macOS, `%LOCALAPPDATA%\indec-mcp\` on Windows) and waits up to 45 s for it. It then checks every 6 hours. A download must open as a DuckDB database with datasets before it replaces the local file. On Windows, where the open file can't be replaced, it's installed at the next start.
+- **Limits.** The file holds public INDEC data only (no usage data, which lives in `usage.sqlite`). Its own buckets: 6 requests per hour and 30 per day per IP, and 120 per hour overall, which caps egress at about 1.4 GB/hour in the worst case. 304s count too, but they're tiny.
+- **Opting out.** Locally: `INDEC_SNAPSHOT_URL=""` turns the download off. Setting `INDEC_DB` also turns it off, because the user manages that file (with `indec-sync` and their own token, for instance). On the server: `SNAPSHOT_ENABLED=0`.
 
 ## Result cache
 

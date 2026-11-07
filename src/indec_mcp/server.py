@@ -51,7 +51,7 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
 
-VERSION = "0.4.4"
+VERSION = "0.5.0"
 REPO_URL = "https://github.com/MagcDEV/indec-mcp"
 ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
 
@@ -543,9 +543,22 @@ def _register_prompts_and_resources(server: MCPServer, mirror: Mirror) -> None:
 
 
 def main() -> None:
-    # Default to the repo's data/ dir so the server works regardless of the client's cwd.
-    default = Path(__file__).resolve().parents[2] / "data" / "indec.duckdb"
-    db = os.environ.get("INDEC_DB") or str(default)
+    import logging
+    import sys
+
+    from .paths import default_db
+    from .snapshot import updater_from_env
+
+    # stdout carries the MCP protocol; logs go to stderr.
+    logging.basicConfig(level=logging.INFO, stream=sys.stderr, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    db = default_db()
+    updater = updater_from_env(db)
+    if updater is not None:
+        first_run = not db.exists()
+        updater.start()
+        if first_run:  # ~12 MB; give it a head start so the first question finds the data
+            logging.getLogger("indec_mcp").info("downloading INDEC data to %s", db)
+            updater.first_check.wait(timeout=45)
     mirror = Mirror(db, Limits())
     create_server(mirror).run("stdio")
 

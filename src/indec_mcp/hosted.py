@@ -20,13 +20,15 @@ from pathlib import Path
 
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import FileResponse, JSONResponse, Response
 
 from .mirror import SOURCE, Limits, Mirror, QueryError
+from .paths import default_db
 from .providers import ProviderRanges
 from .ratelimit import RateLimiter, RateLimitMiddleware, Rule
 from .scheduler import SyncScheduler
 from .server import create_server
+from .snapshot import SnapshotPublisher
 from .usage import UsageMiddleware, UsageRecorder
 
 log = logging.getLogger("indec_mcp.http")
@@ -64,6 +66,12 @@ class Settings:
     usage_enabled: bool = True
     usage_retention_days: int = 90
     stats_token: str | None = None  # enables GET /stats; unset -> 404
+    # GET /snapshot/indec.duckdb.gz (~12 MB) feeds local installs. A local server checks every 6h
+    # and mostly gets a 304, so these only bite on abuse; the global cap bounds egress.
+    snapshot_enabled: bool = True
+    snapshot_per_ip_per_hour: float = 6
+    snapshot_per_ip_per_day: float = 30
+    snapshot_global_per_hour: float = 120
 
     @property
     def usage_db(self) -> Path:
@@ -71,9 +79,8 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
-        default_db = Path(__file__).resolve().parents[2] / "data" / "indec.duckdb"
         return cls(
-            db_path=Path(os.environ.get("INDEC_DB") or default_db),
+            db_path=default_db(),
             port=int(os.environ.get("PORT", 8000)),
             per_ip_per_minute=_env_float("RATE_PER_IP_PER_MINUTE", cls.per_ip_per_minute),
             per_ip_burst=_env_float("RATE_PER_IP_BURST", cls.per_ip_burst),
@@ -91,6 +98,7 @@ class Settings:
             usage_enabled=os.environ.get("USAGE_ENABLED", "1") != "0",
             usage_retention_days=int(os.environ.get("USAGE_RETENTION_DAYS", cls.usage_retention_days)),
             stats_token=os.environ.get("STATS_TOKEN") or None,
+            snapshot_enabled=os.environ.get("SNAPSHOT_ENABLED", "1") != "0",
         )
 
     def limiter(self) -> RateLimiter:
@@ -107,6 +115,15 @@ class Settings:
             ]},
         )
 
+    def snapshot_limiter(self) -> RateLimiter:
+        return RateLimiter(
+            per_ip=[
+                Rule(capacity=self.snapshot_per_ip_per_hour, per_seconds=3600),
+                Rule(capacity=self.snapshot_per_ip_per_day, per_seconds=86_400),
+            ],
+            global_rule=Rule(capacity=self.snapshot_global_per_hour, per_seconds=3600),
+        )
+
 
 def build_app(
     mirror: Mirror,
@@ -116,6 +133,25 @@ def build_app(
     providers: ProviderRanges | None = None,
 ):
     server = create_server(mirror)
+    snapshots = SnapshotPublisher(settings.db_path) if settings.snapshot_enabled else None
+
+    @server.custom_route("/snapshot/indec.duckdb.gz", methods=["GET", "HEAD"], include_in_schema=False)
+    async def snapshot(request: Request) -> Response:
+        # The whole mirror (public INDEC data only), gzipped, for `indec-mcp` running locally.
+        if snapshots is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        import anyio
+
+        try:
+            path, etag = await anyio.to_thread.run_sync(snapshots.current)
+        except FileNotFoundError:
+            return JSONResponse({"error": "mirror not ready"}, status_code=503, headers={"retry-after": "600"})
+        tag = f'"{etag}"'
+        if tag in request.headers.get("if-none-match", ""):
+            return Response(status_code=304, headers={"etag": tag})
+        log.info("snapshot download %s", etag)
+        return FileResponse(path, media_type="application/gzip", filename="indec.duckdb.gz",
+                            headers={"etag": tag, "cache-control": "public, max-age=3600"})
 
     @server.custom_route("/stats", methods=["GET"], include_in_schema=False)
     async def stats(request: Request) -> JSONResponse:
@@ -182,6 +218,10 @@ def build_app(
     app = RateLimitMiddleware(
         app, settings.limiter(), path_prefix="/mcp", proxy_hops=settings.proxy_hops, ip_header=settings.ip_header,
         classify=classify,
+    )
+    app = RateLimitMiddleware(
+        app, settings.snapshot_limiter(), path_prefix="/snapshot", proxy_hops=settings.proxy_hops,
+        ip_header=settings.ip_header,
     )
     if usage is not None:  # outermost, so rate-limited (429) requests are counted too
         app = UsageMiddleware(app, usage, path_prefix="/mcp", proxy_hops=settings.proxy_hops,

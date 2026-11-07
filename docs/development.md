@@ -62,6 +62,13 @@ The server's instructions tell the model to cite "Fuente: INDEC" with the period
 
 ## Run it locally
 
+**As a user**, no clone needed: `uvx indec-mcp` (or `pipx run indec-mcp`, or `pip install indec-mcp`). On first start it downloads the daily snapshot of the mirror from the hosted server (about 12 MB) to your user data dir, then checks for a new one every 6 hours. No INDEC token needed. Environment variables:
+
+- `INDEC_DB`: path to your own mirror file. If set, the server never downloads or replaces it.
+- `INDEC_SNAPSHOT_URL`: where to download the snapshot from. An empty value turns downloads off.
+
+**For development:**
+
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
 echo 'INDEC_TOKEN=...' > .env            # git ignores this file; see "INDEC token" below
@@ -72,7 +79,7 @@ echo 'INDEC_TOKEN=...' > .env            # git ignores this file; see "INDEC tok
 ```
 
 - **Claude Code:** `.mcp.json` registers the local server (`.venv/bin/indec-mcp`, over stdio). Start `claude` in this folder and approve `indec` when asked.
-- **Other clients:** run `.venv/bin/indec-mcp`. It reads `INDEC_DB`, which defaults to `data/indec.duckdb`.
+- **Other clients:** run `.venv/bin/indec-mcp`. In a checkout it uses `data/indec.duckdb` and keeps it fresh from the snapshot like an installed copy does. Set `INDEC_SNAPSHOT_URL=""` to keep a mirror you synced yourself untouched.
 - **HTTP, as in production:** run `SYNC_ENABLED=0 .venv/bin/indec-mcp-http`. It serves `http://localhost:8000/mcp`.
 
 ### How the sync works
