@@ -45,15 +45,20 @@ class _Bucket:
 
 
 class RateLimiter:
+    """Token buckets per key, with named rule profiles (e.g. 'direct' per IP, 'provider' for
+    Claude.ai/ChatGPT servers), plus one global bucket shared by every key."""
+
     def __init__(
         self,
         per_ip: list[Rule],
         global_rule: Rule | None,
         *,
+        profiles: dict[str, list[Rule]] | None = None,
         max_tracked_ips: int = 50_000,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.per_ip = per_ip
+        self.profiles = {"direct": per_ip, **(profiles or {})}
         self.global_rule = global_rule
         self.max_tracked_ips = max_tracked_ips
         self._clock = clock
@@ -64,19 +69,21 @@ class RateLimiter:
         b.tokens = min(rule.capacity, b.tokens + (now - b.updated) * rule.rate)
         b.updated = now
 
-    def check(self, ip: str) -> float:
+    def check(self, ip: str, profile: str = "direct") -> float:
         """0.0 if allowed (and consumes a token everywhere), else seconds until retry."""
+        rules = self.profiles[profile]
+        key = ip if profile == "direct" else f"{profile}:{ip}"
         now = self._clock()
-        buckets = self._ips.get(ip)
+        buckets = self._ips.get(key)
         if buckets is None:
-            buckets = [_Bucket(r.capacity, now) for r in self.per_ip]
-            self._ips[ip] = buckets
+            buckets = [_Bucket(r.capacity, now) for r in rules]
+            self._ips[key] = buckets
             if len(self._ips) > self.max_tracked_ips:
                 self._ips.popitem(last=False)  # evict least recently seen
         else:
-            self._ips.move_to_end(ip)
+            self._ips.move_to_end(key)
 
-        pairs = list(zip(buckets, self.per_ip))
+        pairs = list(zip(buckets, rules))
         if self._global is not None:
             pairs.append((self._global, self.global_rule))
         wait = 0.0
@@ -125,12 +132,16 @@ class RateLimitMiddleware:
         path_prefix: str = "/mcp",
         proxy_hops: int = 1,
         ip_header: str | None = None,
+        classify: Callable[[str], str | None] | None = None,
     ):
         self.app = app
         self.limiter = limiter
         self.path_prefix = path_prefix
         self.proxy_hops = proxy_hops
         self.ip_header = ip_header
+        # Maps an IP to a provider name ('anthropic', 'openai') for hosted AI clients, which share
+        # egress IPs among all their users: those get one larger bucket per provider instead.
+        self.classify = classify
 
     async def __call__(self, scope, receive, send):
         if (
@@ -140,12 +151,16 @@ class RateLimitMiddleware:
         ):
             return await self.app(scope, receive, send)
         ip = client_ip(scope, self.proxy_hops, self.ip_header)
-        wait = self.limiter.check(ip)
+        provider = self.classify(ip) if self.classify else None
+        if provider and "provider" in self.limiter.profiles:
+            wait = self.limiter.check(provider, "provider")
+        else:
+            wait = self.limiter.check(ip)
         if not wait:
             return await self.app(scope, receive, send)
 
         retry = max(1, math.ceil(wait))
-        log.info("rate limited client=%s retry_after=%ss", _anon(ip), retry)
+        log.info("rate limited client=%s via=%s retry_after=%ss", _anon(ip), provider or "direct", retry)
         body = json.dumps({
             "jsonrpc": "2.0",
             "id": None,

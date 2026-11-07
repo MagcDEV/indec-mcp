@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import decimal
+import json
 import os
 import re
 import threading
@@ -87,6 +88,54 @@ def _jsonable(v: Any) -> Any:
     return v
 
 
+class ResultCache:
+    """LRU cache of tool results, valid for one version of the mirror file.
+
+    The data only changes when `indec-sync` replaces the file (daily), so a result is valid until
+    then: the cache empties itself when the file version changes. Bounded by total JSON size.
+    Exceptions are never cached.
+    """
+
+    def __init__(self, max_bytes: int = 64 * 1024 * 1024, max_entry_bytes: int = 4 * 1024 * 1024):
+        from collections import OrderedDict
+
+        self.max_bytes = max_bytes
+        self.max_entry_bytes = max_entry_bytes
+        self._d: OrderedDict = OrderedDict()
+        self._lock = threading.Lock()
+        self._version: object = None
+        self._bytes = 0
+        self.hits = self.misses = 0
+
+    def get_or_compute(self, version: object, key: str, compute):
+        with self._lock:
+            if version != self._version:
+                self._d.clear()
+                self._bytes, self._version = 0, version
+            if key in self._d:
+                self._d.move_to_end(key)
+                self.hits += 1
+                return self._d[key][0]
+            self.misses += 1
+        value = compute()  # outside the lock: slow queries don't block cache hits
+        size = len(json.dumps(value, default=str, ensure_ascii=False))
+        if size <= self.max_entry_bytes:
+            with self._lock:
+                if self._version == version and key not in self._d:
+                    self._d[key] = (value, size)
+                    self._bytes += size
+                    while self._bytes > self.max_bytes and self._d:
+                        _, (_, sz) = self._d.popitem(last=False)
+                        self._bytes -= sz
+        return value
+
+    def stats(self) -> dict:
+        with self._lock:
+            total = self.hits + self.misses
+            return {"entries": len(self._d), "mb": round(self._bytes / 1e6, 2), "hits": self.hits,
+                    "misses": self.misses, "hit_rate_pct": round(100 * self.hits / total, 1) if total else None}
+
+
 class Mirror:
     def __init__(self, db_path: str | os.PathLike, limits: Limits = Limits()):
         self.db_path = Path(db_path)
@@ -96,6 +145,7 @@ class Mirror:
         self._con: duckdb.DuckDBPyConnection | None = None
         self._version: tuple[int, int] | None = None
         self._dims_cache: dict[str, dict] = {}
+        self.cache = ResultCache()
 
     # -- connection --------------------------------------------------------------------------
 
@@ -136,6 +186,15 @@ class Mirror:
         cur = self._connection().cursor()
         cur.execute("USE mirror")  # cursors don't inherit the parent's USE
         return cur
+
+    def cached(self, name: str, args: dict, compute):
+        """Run `compute()` once per (tool, args) per mirror version."""
+        try:
+            version = self._file_version()
+        except FileNotFoundError:
+            return compute()  # raises the friendly "not available yet" error
+        key = name + ":" + json.dumps(args, sort_keys=True, default=str, ensure_ascii=False)
+        return self.cache.get_or_compute(version, key, compute)
 
     def close(self) -> None:
         with self._swap_lock:

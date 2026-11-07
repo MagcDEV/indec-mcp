@@ -16,6 +16,7 @@ Production: **https://indec-mcp-production.up.railway.app/mcp** (Streamable HTTP
 | `CLIENT_IP_HEADER` | `x-real-ip` | The header that rate limits are keyed on (see below) |
 | `RATE_PER_IP_PER_MINUTE` / `RATE_PER_IP_BURST` / `RATE_PER_IP_PER_DAY` | 30 / 20 / 2000 | Per-client limits |
 | `RATE_GLOBAL_PER_SECOND` / `RATE_GLOBAL_BURST` | 20 / 100 | Total for the whole instance |
+| `RATE_PROVIDER_BURST` / `RATE_PROVIDER_PER_MINUTE` / `RATE_PROVIDER_PER_DAY` | 200 / 600 / 100000 | One bucket for each hosted AI provider (Claude.ai, ChatGPT), shared by all its users |
 | `MAX_CONNECTIONS` | 64 | uvicorn returns 503 beyond this |
 | `SYNC_ENABLED` / `SYNC_HOUR_UTC` | 1 / 22 | Daily sync at 22:00 UTC (19:00 ART) |
 | `STATS_TOKEN` | — | **Secret.** Enables `GET /stats` (Bearer token). Without it, `/stats` returns 404. |
@@ -37,6 +38,20 @@ Requests pass through these layers in order:
    - At most 4 queries run at once. Callers beyond that wait up to 3 s, then get "servidor ocupado" (server busy).
 
 The INDEC API is never called on behalf of users. Only the daily sync calls it, with about 2,000 requests per day whatever the traffic. No LLM runs on the server, so each request costs CPU time only.
+
+### Hosted AI clients (Claude.ai, ChatGPT)
+
+These clients call MCP servers from their providers' servers, not from the user's device. In production, one Claude.ai user setting up the connector arrived from **6 different Anthropic IPs** (2026-11-07). For that traffic an IP is neither a person nor a fair rate-limit key. So:
+
+- **Recognition:** `providers.py` recognizes it by **source IP** against the providers' published egress ranges. Client names and User-Agents are ignored for this, because anyone can fake them.
+  - Anthropic: `160.79.104.0/21` and `153.61.208.0/20` ([docs](https://platform.claude.com/docs/en/api/ip-addresses), stable).
+  - OpenAI: [`chatgpt-connectors.json`](https://openai.com/chatgpt-connectors.json). It changes, so it's refreshed daily, cached in `/data/provider_ranges/`, with a bundled snapshot as fallback.
+- **Rate limits:** each provider gets one larger bucket shared by all its users (`RATE_PROVIDER_*`). Everyone else keeps the per-IP limits. The global limit applies to all traffic.
+- **Analytics:** these requests are stored with `via = anthropic|openai` and excluded from the "users" count. `/stats` reports them separately under `via_providers`, as volume.
+
+## Result cache
+
+Every tool result is cached in memory, keyed by tool and arguments (SQL with whitespace normalized), for as long as the mirror file stays the same. The daily sync replaces the file, which empties the cache, so it never serves stale data. The cache is capped at 64 MB, entries larger than 4 MB aren't stored, and errors are never cached. Measured on real data: 8–52 ms uncached, about 1 ms from cache. Hits and misses are shown in `/healthz` under `cache`.
 
 ### Client IP on Railway
 

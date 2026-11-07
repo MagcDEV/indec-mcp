@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS events (
     detail   TEXT,
     status   INTEGER,
     is_error INTEGER,
-    ms       INTEGER
+    ms       INTEGER,
+    via      TEXT                -- 'anthropic' / 'openai' for hosted AI clients, NULL if direct
 );
 CREATE INDEX IF NOT EXISTS events_day ON events(day);
 CREATE INDEX IF NOT EXISTS events_user ON events(user, day);
@@ -105,6 +106,10 @@ class UsageRecorder:
         self._clients: dict[str, str] = {}  # user -> last self-reported client name (in memory only)
         with self._connect() as con:
             con.executescript(_SCHEMA)
+            cols = {r[1] for r in con.execute("PRAGMA table_info(events)")}
+            if "via" not in cols:  # migrate v1 tables; Claude.ai traffic predates classification
+                con.execute("ALTER TABLE events ADD COLUMN via TEXT")
+                con.execute("UPDATE events SET via = 'anthropic' WHERE client LIKE 'Anthropic%'")
         self._stop = threading.Event()
         self._last_prune = 0.0
         if start_thread:
@@ -132,7 +137,8 @@ class UsageRecorder:
         return con
 
     def record(self, *, user: str, client: str | None, method: str | None, tool: str | None,
-               detail: str | None, status: int, is_error: bool, ms: int, client_explicit: bool = True) -> None:
+               detail: str | None, status: int, is_error: bool, ms: int, client_explicit: bool = True,
+               via: str | None = None) -> None:
         # Priority: self-reported clientInfo now > clientInfo this user sent earlier > User-Agent.
         if client and client_explicit:
             if len(self._clients) > 100_000:
@@ -142,7 +148,7 @@ class UsageRecorder:
             client = self._clients.get(user) or client
         now = int(time.time())
         row = (now, time.strftime("%Y-%m-%d", time.gmtime(now)), user, client, method, tool, detail,
-               status, int(is_error), ms)
+               status, int(is_error), ms, via)
         try:
             self._q.put_nowait(row)
         except queue.Full:
@@ -157,7 +163,9 @@ class UsageRecorder:
                 break
         if rows:
             with self._connect() as con:
-                con.executemany("INSERT INTO events VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+                con.executemany(
+                    "INSERT INTO events (ts, day, user, client, method, tool, detail, status, is_error, ms, via) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
         if time.time() - self._last_prune > 3600:
             self.prune()
         return len(rows)
@@ -195,23 +203,31 @@ class UsageRecorder:
             today = time.strftime("%Y-%m-%d", time.gmtime())
             def uniq(n: int) -> int:
                 d = time.strftime("%Y-%m-%d", time.gmtime(time.time() - (n - 1) * 86400))
-                return con.execute("SELECT count(DISTINCT user) FROM events WHERE day >= ?", (d,)).fetchone()[0]
+                return con.execute("SELECT count(DISTINCT user) FROM events WHERE day >= ? AND via IS NULL",
+                                   (d,)).fetchone()[0]
 
-            first_seen = "(SELECT user, min(day) AS first FROM events GROUP BY user)"
+            first_seen = "(SELECT user, min(day) AS first FROM events WHERE via IS NULL GROUP BY user)"
             return {
                 "window_days": days,
                 "users": {
                     "today": uniq(1), "last_7_days": uniq(7), "last_30_days": uniq(30),
-                    "all_time_retained": con.execute("SELECT count(DISTINCT user) FROM events").fetchone()[0],
-                    "note": "Usuarios aproximados: IPs distintas (cifradas). Una red compartida cuenta como uno; "
-                            "una IP que cambia puede contar como varios.",
+                    "all_time_retained": con.execute(
+                        "SELECT count(DISTINCT user) FROM events WHERE via IS NULL").fetchone()[0],
+                    "note": "Usuarios directos aproximados: IPs distintas (cifradas), sin contar Claude.ai/ChatGPT. "
+                            "Una red compartida cuenta como uno; una IP que cambia puede contar como varios.",
                 },
+                "via_providers": q(
+                    "SELECT via, count(*) AS requests, count(*) FILTER (WHERE method = 'tools/call') AS tool_calls, "
+                    "count(DISTINCT day) AS active_days, count(*) FILTER (WHERE status = 429) AS rate_limited "
+                    "FROM events WHERE day >= ? AND via IS NOT NULL GROUP BY via ORDER BY requests DESC", since,
+                ),
                 "daily": q(
-                    f"SELECT e.day, count(DISTINCT e.user) AS users, "
+                    f"SELECT e.day, count(DISTINCT CASE WHEN e.via IS NULL THEN e.user END) AS users, "
                     f"count(DISTINCT CASE WHEN f.first = e.day THEN e.user END) AS new_users, "
+                    f"count(*) FILTER (WHERE e.via IS NOT NULL) AS via_provider, "
                     f"count(*) FILTER (WHERE e.method = 'tools/call') AS tool_calls, "
                     f"count(*) FILTER (WHERE e.status = 429) AS rate_limited, count(*) AS requests "
-                    f"FROM events e JOIN {first_seen} f USING (user) WHERE e.day >= ? GROUP BY e.day ORDER BY e.day",
+                    f"FROM events e LEFT JOIN {first_seen} f USING (user) WHERE e.day >= ? GROUP BY e.day ORDER BY e.day",
                     since,
                 ),
                 "clients": q(
@@ -236,7 +252,8 @@ class UsageRecorder:
                 "retention": q(
                     f"SELECT count(*) FILTER (WHERE n_days = 1) AS one_day_users, "
                     f"count(*) FILTER (WHERE n_days >= 2) AS returning_users "
-                    f"FROM (SELECT user, count(DISTINCT day) AS n_days FROM events WHERE day >= ? GROUP BY user)",
+                    f"FROM (SELECT user, count(DISTINCT day) AS n_days FROM events WHERE day >= ? AND via IS NULL "
+                    f"GROUP BY user)",
                     since,
                 )[0],
                 "rate_limited_requests": con.execute(
@@ -251,8 +268,9 @@ class UsageMiddleware:
     """Outermost ASGI middleware: sees every /mcp request, including ones rejected with 429."""
 
     def __init__(self, app, recorder: UsageRecorder, *, path_prefix: str = "/mcp", proxy_hops: int = 1,
-                 ip_header: str | None = None):
+                 ip_header: str | None = None, classify=None):
         self.app = app
+        self.classify = classify
         self.recorder = recorder
         self.path_prefix = path_prefix
         self.proxy_hops = proxy_hops
@@ -324,8 +342,9 @@ class UsageMiddleware:
                 pass
         ip = client_ip(scope, self.proxy_hops, self.ip_header)
         client, explicit = _client_name(params if isinstance(params, dict) else None, headers)
+        via = self.classify(ip) if self.classify else None
         self.recorder.record(
-            user=self.recorder.user_id(ip), client=client, client_explicit=explicit,
+            via=via, user=self.recorder.user_id(ip), client=client, client_explicit=explicit,
             method=_clip(method, 40) if method else None, tool=tool, detail=detail,
             status=status, is_error=is_error, ms=ms,
         )

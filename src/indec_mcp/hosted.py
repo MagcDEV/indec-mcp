@@ -23,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from .mirror import SOURCE, Limits, Mirror, QueryError
+from .providers import ProviderRanges
 from .ratelimit import RateLimiter, RateLimitMiddleware, Rule
 from .scheduler import SyncScheduler
 from .server import create_server
@@ -47,6 +48,11 @@ class Settings:
     per_ip_per_day: float = 2000
     global_per_second: float = 20
     global_burst: float = 100
+    # Claude.ai / ChatGPT call from shared provider IPs (one user arrived from 6 Anthropic IPs), so
+    # each provider gets one bucket for all its users, sized well above a single person's.
+    provider_burst: float = 200
+    provider_per_minute: float = 600
+    provider_per_day: float = 100_000
     # Railway overwrites X-Real-IP with the client IP (documented, and verified in production, see docs/deploy.md). Its
     # X-Forwarded-For rightmost entry is an internal hop that varies per request, so it can't key
     # rate limits. Set CLIENT_IP_HEADER="" to fall back to X-Forwarded-For + TRUSTED_PROXY_HOPS.
@@ -74,6 +80,9 @@ class Settings:
             per_ip_per_day=_env_float("RATE_PER_IP_PER_DAY", cls.per_ip_per_day),
             global_per_second=_env_float("RATE_GLOBAL_PER_SECOND", cls.global_per_second),
             global_burst=_env_float("RATE_GLOBAL_BURST", cls.global_burst),
+            provider_burst=_env_float("RATE_PROVIDER_BURST", cls.provider_burst),
+            provider_per_minute=_env_float("RATE_PROVIDER_PER_MINUTE", cls.provider_per_minute),
+            provider_per_day=_env_float("RATE_PROVIDER_PER_DAY", cls.provider_per_day),
             ip_header=os.environ.get("CLIENT_IP_HEADER", cls.ip_header) or None,
             proxy_hops=int(os.environ.get("TRUSTED_PROXY_HOPS", cls.proxy_hops)),
             max_connections=int(os.environ.get("MAX_CONNECTIONS", cls.max_connections)),
@@ -92,6 +101,10 @@ class Settings:
                 Rule(capacity=self.per_ip_per_day, per_seconds=86_400),
             ],
             global_rule=Rule(capacity=self.global_burst, per_seconds=self.global_burst / self.global_per_second),
+            profiles={"provider": [
+                Rule(capacity=self.provider_burst, per_seconds=60 * self.provider_burst / self.provider_per_minute),
+                Rule(capacity=self.provider_per_day, per_seconds=86_400),
+            ]},
         )
 
 
@@ -100,6 +113,7 @@ def build_app(
     settings: Settings,
     scheduler: SyncScheduler | None = None,
     usage: UsageRecorder | None = None,
+    providers: ProviderRanges | None = None,
 ):
     server = create_server(mirror)
 
@@ -132,6 +146,8 @@ def build_app(
             "stale_or_failed": [d["table_name"] for d in datasets if d["status"] != "ok"],
             "synced_at": max((d["synced_at"] for d in datasets), default=None),
             "last_sync": scheduler.last_result if scheduler else None,
+            "cache": mirror.cache.stats(),
+            "provider_ranges": providers.counts() if providers else None,
         })
 
     @server.custom_route("/", methods=["GET"], include_in_schema=False)
@@ -162,12 +178,14 @@ def build_app(
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
         host="0.0.0.0",
     )
+    classify = providers.classify if providers else None
     app = RateLimitMiddleware(
-        app, settings.limiter(), path_prefix="/mcp", proxy_hops=settings.proxy_hops, ip_header=settings.ip_header
+        app, settings.limiter(), path_prefix="/mcp", proxy_hops=settings.proxy_hops, ip_header=settings.ip_header,
+        classify=classify,
     )
     if usage is not None:  # outermost, so rate-limited (429) requests are counted too
         app = UsageMiddleware(app, usage, path_prefix="/mcp", proxy_hops=settings.proxy_hops,
-                              ip_header=settings.ip_header)
+                              ip_header=settings.ip_header, classify=classify)
     return app
 
 
@@ -195,8 +213,12 @@ def main() -> None:
         log.info("usage analytics on (%s, %sd retention, /stats %s)", settings.usage_db.name,
                  settings.usage_retention_days, "enabled" if settings.stats_token else "disabled")
 
+    providers = ProviderRanges(cache_dir=settings.db_path.parent / "provider_ranges")
+    providers.start_daily_refresh()
+    log.info("provider ranges loaded: %s", providers.counts())
+
     uvicorn.run(
-        build_app(mirror, settings, scheduler, usage),
+        build_app(mirror, settings, scheduler, usage, providers),
         host="0.0.0.0",
         port=settings.port,
         proxy_headers=False,  # we read X-Forwarded-For ourselves, counting trusted hops

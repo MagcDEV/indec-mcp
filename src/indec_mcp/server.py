@@ -8,6 +8,7 @@ sandboxed `query_sql` escape hatch for everything else.
 from __future__ import annotations
 
 import os
+import re
 from functools import wraps
 from pathlib import Path
 from typing import Annotated, Any
@@ -62,7 +63,22 @@ def _tool_errors(fn):
     return wrapper
 
 
+def _whitespace_normalized(kw: dict) -> dict:
+    if isinstance(kw.get("sql"), str):
+        kw = {**kw, "sql": re.sub(r"[\s;]+$", "", " ".join(kw["sql"].split()))}
+    return kw
+
+
 def create_server(mirror: Mirror) -> MCPServer:
+    def cached(fn):
+        """Serve repeated calls from the per-mirror-version cache (data changes once a day)."""
+
+        @wraps(fn)
+        def wrapper(**kwargs):
+            return mirror.cached(fn.__name__, _whitespace_normalized(kwargs), lambda: fn(**kwargs))
+
+        return wrapper
+
     server = MCPServer(
         name="indec",
         title="INDEC Argentina (no oficial)",
@@ -72,6 +88,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def latest_indicators() -> dict[str, Any]:
         """Últimas cifras de titular del INDEC, cada una con su período: inflación (IPC nacional,
         general y núcleo), actividad (EMAE), salarios, canastas básicas CBA/CBT, pobreza e
@@ -80,6 +97,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def inflation_series(
         category: Annotated[
             str,
@@ -102,6 +120,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def compare_series(
         series: Annotated[
             list[str],
@@ -125,6 +144,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def foreign_trade(
         flow: Annotated[str, Field(description="'exportaciones' (valor FOB) o 'importaciones' (valor CIF).")] = "exportaciones",
         country: Annotated[str | None, Field(description="País por nombre, ej. 'Brasil', 'China', 'Estados Unidos'.")] = None,
@@ -148,6 +168,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def trade_codes(
         query: Annotated[str, Field(description="Nombre o código a buscar, ej. 'china', 'carnes', 'MOI'.")],
     ) -> list[dict[str, Any]]:
@@ -157,6 +178,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def population(
         place: Annotated[
             str | None,
@@ -175,6 +197,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def list_datasets() -> list[dict[str, Any]]:
         """Los datasets del mirror (nombre de tabla SQL, descripción, filas, último período, estado
         de sincronización)."""
@@ -182,6 +205,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors
+    @cached
     def describe_dataset(
         table: Annotated[str, Field(description="Nombre de tabla de `list_datasets`, ej. 'ipc_nacional'.")],
     ) -> dict[str, Any]:
@@ -199,6 +223,7 @@ def create_server(mirror: Mirror) -> MCPServer:
 
     @server.tool(annotations=READ_ONLY, description=query_doc)
     @_tool_errors
+    @cached
     def query_sql(
         sql: Annotated[str, Field(description="Una única consulta SELECT en dialecto DuckDB.")],
     ) -> dict[str, Any]:
