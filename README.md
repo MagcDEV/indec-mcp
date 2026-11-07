@@ -1,89 +1,198 @@
-# indec-mcp (working name)
+# INDEC en tu asistente de IA
 
-An AI and tooling layer over the official **[Catálogo API-INDEC](https://api.indec.gob.ar)**, the API that Argentina's national statistics institute launched on 2026-11-02 (in beta). The goal is to let anyone "chat with INDEC data" (inflation, basic baskets, wages, economic activity, poverty, employment, trade, population) from an AI assistant, with correct figures and proper citations.
+**Preguntale a Claude, ChatGPT o Cursor por la inflación, los salarios, la pobreza, las exportaciones o la población de Argentina, y te responde con los datos oficiales del INDEC.**
+Sin registrarte, sin token y sin instalar nada: pegás una URL y listo.
 
-> Unofficial. Not affiliated with INDEC. Data: **Fuente: INDEC**.
+![Demo: se agrega el servidor y se pregunta cuánto se exportó a China](docs/img/demo.gif)
 
-## Status
+> Servicio **no oficial**, no afiliado al INDEC. Los datos son del INDEC (Catálogo API-INDEC). Fuente: INDEC.
 
-- ✅ Research ([docs/api-research.md](docs/api-research.md))
-- ✅ **Sync job**: mirrors all 19 datasets (about 2 M rows) into one DuckDB file
-- ✅ **Local MCP server** (stdio) over the mirror, tested end to end with Claude Code
-- ✅ **Hosted MCP**: `https://indec-mcp-production.up.railway.app/mcp`, with rate limits and a daily sync ([docs/deploy.md](docs/deploy.md))
+---
 
-## Connect (hosted, no signup)
+## Empezá en 1 minuto
 
-Add `https://indec-mcp-production.up.railway.app/mcp` as a remote MCP server (Streamable HTTP):
+![Tres pasos: copiar la URL, agregarla como conector, preguntar](docs/img/conectar.png)
 
-```bash
-claude mcp add --transport http indec https://indec-mcp-production.up.railway.app/mcp   # Claude Code
+Esta es la única URL que necesitás:
+
+```
+https://indec-mcp-production.up.railway.app/mcp
 ```
 
-In Claude.ai, ChatGPT, Cursor and similar clients, add a custom connector or remote MCP server with the same URL.
+Elegí tu aplicación:
 
-**Limits per client IP:** a burst of 20 requests, 30 per minute sustained, and 2000 per day. Over the limit you get HTTP 429 with `Retry-After`. The data syncs daily at 19:00 ART. Operations are covered in [docs/deploy.md](docs/deploy.md).
+<details open>
+<summary><b>Claude Code</b> (terminal)</summary>
 
-## MCP server
+```bash
+claude mcp add --transport http indec https://indec-mcp-production.up.railway.app/mcp
+```
 
-The server has six read-only tools:
+Agregá `--scope user` para tenerlo en todos tus proyectos. Después abrí `claude` y preguntá.
+</details>
 
-| Tool | Use it for |
+<details>
+<summary><b>Claude</b> (claude.ai o la app de escritorio)</summary>
+
+1. Andá a **Configuración → Conectores** y elegí **Agregar conector personalizado**.
+2. Nombre: `INDEC`. URL: `https://indec-mcp-production.up.railway.app/mcp`. No requiere autenticación.
+3. En un chat nuevo, activá el conector **INDEC** y preguntá.
+
+*Los conectores personalizados pueden depender de tu plan.*
+</details>
+
+<details>
+<summary><b>ChatGPT</b></summary>
+
+Con el **modo desarrollador** activado, creá un conector o app nueva de tipo servidor MCP con la URL `https://indec-mcp-production.up.railway.app/mcp`, sin autenticación. Después activalo en el chat.
+
+*La disponibilidad depende de tu plan y del menú de ChatGPT, que cambia seguido.*
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+En `~/.cursor/mcp.json` (para todos tus proyectos) o en `.cursor/mcp.json` (solo uno):
+
+```json
+{
+  "mcpServers": {
+    "indec": { "url": "https://indec-mcp-production.up.railway.app/mcp" }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>VS Code</b> (GitHub Copilot)</summary>
+
+En `.vscode/mcp.json`:
+
+```json
+{
+  "servers": {
+    "indec": { "type": "http", "url": "https://indec-mcp-production.up.railway.app/mcp" }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Otra aplicación</b></summary>
+
+Sirve cualquier cliente MCP que acepte servidores remotos por **Streamable HTTP**: usá la URL de arriba, sin autenticación.
+</details>
+
+---
+
+## Qué le podés preguntar
+
+| Tema | Por ejemplo |
 |---|---|
-| `latest_indicators` | Headline figures, each with its period: CPI (general and core), EMAE, wages, CBA/CBT, poverty, unemployment |
-| `inflation_series` | A CPI series by category (general, core, regulated, divisions…) and region, with monthly, year-on-year and year-to-date changes, the index, or incidence |
-| `compare_series` | Two to four monthly series side by side, aligned on their shared months: wages vs CPI (real wages), basic basket vs wages, CPI by region, EMAE. Shows INDEC's published changes, plus a cumulative summary that is marked as computed |
-| `list_datasets` | What's in the mirror, with its freshness |
-| `describe_dataset` | Columns, their meaning, the **exact values** of each text dimension (filters are case-sensitive) and sample rows |
-| `query_sql` | Read-only DuckDB SQL for everything else |
+| **Inflación** | "¿Cuánto fue la inflación del último mes? ¿Y la núcleo?" · "¿Cómo viene alimentos en el NOA comparado con GBA?" |
+| **Salarios** | "¿Los salarios le ganaron a la inflación desde enero de 2024?" · "¿Y los del sector público?" |
+| **Canasta básica** | "¿Cuánto necesita una familia tipo para no ser pobre?" · "¿Cuánto subió la canasta en un año?" |
+| **Pobreza y empleo** | "¿Cómo evolucionó la pobreza desde 2016?" · "¿Cuál es la desocupación hoy?" |
+| **Actividad** | "¿Está creciendo la economía según el EMAE?" · "¿Cómo viene la industria?" |
+| **Comercio exterior** | "¿Cuánto le exportamos a China en 2025 y qué productos?" · "¿Cuánto importamos en bienes de capital por año?" |
+| **Población** | "¿Cuánta gente vive en Córdoba?" · "¿Cuál es el departamento más poblado de Mendoza?" |
+| **Lo que quieras** | Precios mayoristas, costo de la construcción, minería y más: el asistente puede consultar los 19 datasets |
 
-The server's instructions tell the model to cite "Fuente: INDEC" with the period of each figure, to flag provisional data, to prefer INDEC's published changes over computing its own, and to say when it has computed something.
+En los clientes que muestran *prompts* MCP también tenés atajos listos: **informe de inflación**, **panorama económico**, **evolución de la pobreza**, **comercio con un país** y **salario real**.
 
-**`query_sql` sandbox:**
-- The database is opened read-only.
-- `enable_external_access=false` means no file access, network access, `ATTACH` or extension installs.
-- The configuration is locked, so a query can't turn those settings back on.
-- Each call accepts one SELECT statement, runs for at most 5 s and returns at most 500 rows.
-- Tests cover `DROP`, `INSERT`, `COPY TO`, `read_csv('/etc/passwd')`, URLs and runaway joins.
+## Ejemplos reales
 
-**Use it from Claude Code.** `.mcp.json` registers the server for this project. Start `claude` in this folder and approve the `indec` server when asked. Then ask things like *"¿Cómo viene la inflación de alimentos en el NOA vs. GBA este año?"*
+Respuestas sin editar, generadas con Claude Code conectado a este servidor ([transcripciones](docs/img/demos.json)):
 
-For other MCP clients, run `.venv/bin/indec-mcp`. It speaks stdio and reads `INDEC_DB`, which defaults to `data/indec.duckdb`.
+![Salarios vs. inflación desde 2024](docs/img/demo-1.png)
 
-## Sync
+<details>
+<summary>Más ejemplos: exportaciones a China · población e inflación de Córdoba</summary>
 
-```bash
-python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'   # or: uv sync
-echo 'INDEC_TOKEN=...' > .env                                # git ignores this file
+![Exportaciones a China en 2025](docs/img/demo-2.png)
 
-.venv/bin/indec-sync                       # full refresh -> data/indec.duckdb (about 15 min, about 2,000 requests)
-.venv/bin/indec-sync --only ipc_nacional   # refresh just one dataset; the rest are carried over
-.venv/bin/python -m pytest                 # 78 tests: fake PostgREST server and fixture DB, no network
+![Población de Córdoba e inflación regional](docs/img/demo-3.png)
+</details>
+
+---
+
+## Por qué usar este servidor
+
+- **Es el más simple de usar.** Una URL y listo: no hace falta registrarse en el INDEC, pedir ni renovar un token, ni instalar Node o Python.
+- **Responde con cuidado.** Le indica al asistente que cite "Fuente: INDEC" con el período de cada cifra, que avise cuando un dato es provisorio y que use las variaciones que publica el INDEC en lugar de calcularlas. Si el asistente calcula algo (por ejemplo, el salario real), tiene que decirlo.
+- **No esconde los huecos.** En comercio exterior, parte de las filas de detalle son confidenciales por secreto estadístico (en los meses recientes, cerca de la mitad). El servidor informa siempre cuántas son, así el asistente no presenta una suma parcial como si fuera el total.
+- **Es rápido y estable.** Trabaja sobre una copia de todos los datos que se actualiza cada día, así que no depende de que la API del INDEC (todavía en beta) esté funcionando en ese momento.
+- **Cuida al INDEC.** Haya los usuarios que haya, la API del INDEC recibe solo unas 2.000 consultas por día, las de la actualización diaria.
+- **Es código abierto** ([MIT](LICENSE)), y podés correrlo vos mismo ([docs/development.md](docs/development.md)).
+
+### Otras opciones
+
+| | Este servidor | [indec-mcp de SantinoSpingola](https://github.com/SantinoSpingola/indec-mcp) | [OpenArg](https://openarg.org/) |
+|---|---|---|---|
+| Cómo se usa | Pegás una URL | Se instala en tu computadora (Node) | Chat web, API y MCP |
+| Registro o token | **No hace falta** | Token propio del INDEC | Clave de OpenArg |
+| Uso gratis | 2.000 consultas por día | Lo que permita el INDEC | 200 consultas y 10 preguntas por mes |
+| Cobertura | INDEC, en profundidad | INDEC, en profundidad | Más de 33.000 datasets de 38 portales públicos |
+
+Si querés datos de muchos organismos además del INDEC, OpenArg cubre más fuentes. Si preferís consultar la API del INDEC en vivo con tu propio token, el proyecto de Santino es muy completo. Este servidor apunta a que cualquiera pueda preguntar sobre el INDEC sin ningún paso previo.
+
+---
+
+## Datos incluidos
+
+Los **19 servicios de datos** del [Catálogo API-INDEC](https://api.indec.gob.ar), unos 2 millones de filas, actualizados todos los días a las 19:00 (hora de Argentina). El INDEC publica sus informes a las 16:00.
+
+- **Precios:** IPC por región y categoría (desde dic-2016), canastas básicas CBA y CBT (desde abr-2016), precios mayoristas, costo de la construcción y redeterminación de obras públicas
+- **Salarios:** índice de salarios por sector
+- **Actividad:** EMAE (general y por sectores) e índice de producción industrial manufacturera y minera
+- **Condiciones de vida:** pobreza e indigencia (semestral), mercado de trabajo (trimestral) y canasta de crianza
+- **Comercio exterior:** exportaciones (desde 1986) e importaciones, por país y categoría
+- **Población:** proyecciones 2022–2040 por provincia, sexo y edad, y estimaciones por departamento 2022–2035 (base Censo 2022)
+
+Estado y fecha de la última actualización: <https://indec-mcp-production.up.railway.app/healthz>
+
+## Límites de uso
+
+Para que el servicio siga siendo gratis y estable para todos, hay un límite por conexión:
+
+- hasta **20 consultas seguidas**, después **30 por minuto**;
+- hasta **2.000 por día**.
+
+Una pregunta normal usa pocas consultas, entre 2 y 10. Si llegás al límite, el asistente recibe un aviso para esperar unos segundos.
+
+## Preguntas frecuentes
+
+**¿Es oficial?** No. Es un proyecto independiente que usa la API pública del INDEC. Ante cualquier duda, la referencia es [indec.gob.ar](https://www.indec.gob.ar).
+
+**¿Ven mis conversaciones?** No. El servidor solo recibe las consultas de datos que hace el asistente (por ejemplo, "IPC de Alimentos desde 2025"), no tu chat. El programa no guarda registros de acceso con direcciones IP: para los límites de uso solo registra un resumen cifrado (hash). La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas.
+
+**¿Cuesta algo?** El servidor es gratis. Lo que uses de tu asistente de IA depende de tu plan con ese servicio.
+
+**¿Por qué una cifra no coincide exactamente con el informe del INDEC?** Puede pasar por redondeo cuando se calcula una variación, o porque en comercio exterior se excluyen los datos confidenciales. El asistente debería aclararlo en esos casos.
+
+**¿Puedo instalarlo en mi propio servidor?** Sí: [docs/development.md](docs/development.md) explica cómo correrlo y [docs/deploy.md](docs/deploy.md) cómo publicarlo.
+
+## Para desarrolladores
+
+- [docs/development.md](docs/development.md): arquitectura, herramientas MCP, cómo correrlo localmente y tests
+- [docs/deploy.md](docs/deploy.md): despliegue, configuración, protección contra abuso y operación
+- [docs/api-research.md](docs/api-research.md): cómo funciona la API del INDEC, con mediciones reales
+- [docs/datasets.md](docs/datasets.md): los 19 datasets con sus columnas
+
+## Créditos
+
+- **Datos:** [INDEC](https://www.indec.gob.ar), mediante el [Catálogo API-INDEC](https://api.indec.gob.ar).
+- **Ideas:** varias funciones (buscar códigos de comercio exterior por nombre, informar los datos confidenciales, los *prompts* y la guía de signos convencionales) están inspiradas en [SantinoSpingola/indec-mcp](https://github.com/SantinoSpingola/indec-mcp) (MIT). Se reimplementaron en Python, sin copiar su código.
+- **Licencia:** [MIT](LICENSE).
+
+---
+
+## English
+
+**Ask Claude, ChatGPT or Cursor about Argentina's official statistics (INDEC): inflation, wages, poverty, trade and population.** There's no signup, no API token and nothing to install. Add this remote MCP server (Streamable HTTP, no auth):
+
+```
+https://indec-mcp-production.up.railway.app/mcp
 ```
 
-How it works:
-- **Full refresh every run.** INDEC revises provisional figures, so appending only new periods would keep outdated values.
-- **Stable pagination.** Each table is ordered by its full primary key, so pages never skip or repeat rows.
-- **No half-written files.** Each run builds `indec.duckdb.tmp` and then replaces the old file in one step.
-- **Partial failures are survivable.** If one dataset fails, its previous table is kept and marked `stale`. An expired token aborts the run and leaves the mirror untouched.
-- **Normalized names.** All column names are lowercase.
-- **Built-in validation.** Row counts are checked against the API's reported total, and duplicate primary keys are flagged.
-- **Metadata for the MCP layer.** The `_datasets` table holds descriptions, primary keys, row counts, latest period and status. The `_columns` table holds each column's type and its description from the API spec.
-
-```sql
--- duckdb data/indec.duckdb
-SELECT table_name, row_count, latest_periodo, status FROM _datasets ORDER BY row_count DESC;
-```
-
-- [docs/api-research.md](docs/api-research.md): how the API works (auth, PostgREST queries, limits, data quirks, terms) and what is still unknown
-- [docs/datasets.md](docs/datasets.md): all 19 datasets with their columns and primary keys (generated from the spec)
-- [docs/ideas.md](docs/ideas.md): project ideas, the recommended architecture for a hosted MCP that resists abuse, and a roadmap
-- [spec/indec-openapi.json](spec/indec-openapi.json): a snapshot of the public OpenAPI 3.1 spec
-
-## Other scripts
-
-```bash
-scripts/fetch-spec.sh                 # refresh the spec snapshot and regenerate docs/datasets.md (no token needed)
-INDEC_TOKEN=... scripts/probe.sh      # row counts, latency and rate-limit headers for each dataset
-```
-
-To get a token, sign up at <https://api.indec.gob.ar>, verify with the OTP, and generate it from your profile. It is shown once. The FAQ says it lasts 12 months, but the one we got expires after 6. Keep it in `.env`, which git ignores; `.env.example` shows the format.
+The server holds a daily copy of all 19 datasets in INDEC's new API. It offers 9 read-only tools (headline indicators, CPI series, series comparison such as real wages, foreign trade with name lookup, population, and sandboxed SQL), plus 5 prompts and resources. Answers cite INDEC with the period of each figure and flag provisional or confidential data. Limits are 20 requests in a burst, 30 per minute and 2,000 per day for each client. The project is unofficial and MIT-licensed. Technical documentation is in [docs/development.md](docs/development.md).

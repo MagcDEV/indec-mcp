@@ -1,0 +1,89 @@
+{
+ "captured": "2026-11-07",
+ "client": "Claude Code (claude -p)",
+ "server": "https://indec-mcp-production.up.railway.app/mcp",
+ "note": "Transcripciones reales, sin editar. La pregunta enviada agregaba: 'Respondé en español en 5 líneas como máximo, sin tablas, con la fuente y el período al final.'",
+ "demos": [
+  {
+   "question": "¿Los salarios le ganaron a la inflación desde enero de 2024?",
+   "tool_calls": [
+    {
+     "tool": "compare_series",
+     "args": {
+      "series": [
+       "salarios",
+       "ipc",
+       "salarios:privado registrado",
+       "salarios:no registrado"
+      ],
+      "start": "2023-12",
+      "measure": "base100"
+     }
+    },
+    {
+     "tool": "compare_series",
+     "args": {
+      "series": [
+       "salarios:registrado",
+       "salarios:público",
+       "ipc"
+      ],
+      "start": "2023-12",
+      "end": "2026-08",
+      "measure": "base100"
+     }
+    }
+   ],
+   "answer": "En promedio sí: entre diciembre de 2023 y agosto de 2026 los salarios subieron 324,6% y la inflación 247,5%. Eso da un salario real de alrededor de +22%. El promedio lo empujan los salarios no registrados (+671,7%, real ≈ +122%), pero INDEC los publica con unos 5 meses de rezago, así que ese número exagera la mejora. Los registrados ganaron menos: privados +283,5% (real ≈ +10%) y total registrado +271,8% (real ≈ +7%). El sector público apenas empató (+249,9%, real ≈ +0,7%). Además, todos perdieron fuerte en el primer semestre de 2024 y recién le ganaron a la inflación a partir de mediados de ese año.\nFuente: INDEC (Índice de salarios e IPC Nacional, vía un mirror no oficial del Catálogo API-INDEC). Período: dic-2023 a ago-2026. Las variaciones y los salarios reales los calculé yo a partir de los índices, no son cifras oficiales."
+  },
+  {
+   "question": "¿Cuánto le exportó Argentina a China en 2025 y qué productos?",
+   "tool_calls": [
+    {
+     "tool": "foreign_trade",
+     "args": {
+      "country": "China",
+      "start": "2025",
+      "end": "2025",
+      "group_by": "subcategoria",
+      "top": 10
+     }
+    },
+    {
+     "tool": "foreign_trade",
+     "args": {
+      "country": "China",
+      "start": "2025",
+      "end": "2025",
+      "group_by": "anio"
+     }
+    }
+   ],
+   "answer": "En 2025 Argentina le exportó a China al menos **USD 9.117 millones** (FOB), unas 15,4 millones de toneladas. Es un piso: la suma deja afuera el 31,8% de las filas, que el INDEC no publica por secreto estadístico, así que el total oficial puede ser mayor.\nLo principal fueron las semillas y frutos oleaginosos, sobre todo soja (USD 4.651 M), y las carnes (USD 1.932 M). Les siguieron los productos químicos (USD 755 M), los pescados y mariscos (USD 489 M) y los cereales (USD 435 M).\nMás abajo quedaron las grasas y aceites (USD 240 M), los minerales metalíferos (USD 116 M), los cueros (USD 106 M), los residuos de la industria alimentaria (USD 71 M) y el petróleo crudo (USD 56 M). Cereales y minerales tienen muchos meses confidenciales, así que sus montos reales serían más altos.\nFuente: INDEC, dataset comercio_exterior_exportacion_bienes (consultado en un mirror no oficial del Catálogo API-INDEC). Período: enero a diciembre de 2025."
+  },
+  {
+   "question": "¿Cuánta gente vive en Córdoba y cómo viene la inflación en la región?",
+   "tool_calls": [
+    {
+     "tool": "population",
+     "args": {
+      "place": "Córdoba"
+     }
+    },
+    {
+     "tool": "inflation_series",
+     "args": {
+      "region": "Pampeana",
+      "measures": [
+       "v_m",
+       "v_ia",
+       "v_acum"
+      ],
+      "start": "2026-04"
+     }
+    }
+   ],
+   "answer": "La provincia de Córdoba tiene unos 3.968.336 habitantes proyectados para 2026: 2.016.746 mujeres y 1.951.590 varones.\nINDEC no publica un IPC propio de Córdoba, así que tomé la región Pampeana, que la incluye. Allí la inflación fue de 2,0% mensual en septiembre de 2026 y viene entre 1,6% y 2,4% por mes desde abril.\nLa interanual subió de 31,9% en abril a 33,1% en septiembre, y la acumulada en el año llega a 23,3%: los precios bajan poco y la inflación anual no cede.\nFuente: INDEC, mediante un mirror no oficial del Catálogo API-INDEC (datasets proyecciones_poblacion_jurisdiccion_2022_2040 e ipc_nacional). Períodos: población al 1° de julio de 2026 (base Censo 2022); IPC de abril a septiembre de 2026."
+  }
+ ]
+}
