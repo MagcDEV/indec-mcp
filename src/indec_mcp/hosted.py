@@ -45,7 +45,7 @@ class Settings:
     per_ip_per_day: float = 2000
     global_per_second: float = 20
     global_burst: float = 100
-    # Railway documents X-Real-IP as the client IP set by its edge (see docs/deploy.md). Its
+    # Railway overwrites X-Real-IP with the client IP (documented, and verified in production, see docs/deploy.md). Its
     # X-Forwarded-For rightmost entry is an internal hop that varies per request, so it can't key
     # rate limits. Set CLIENT_IP_HEADER="" to fall back to X-Forwarded-For + TRUSTED_PROXY_HOPS.
     ip_header: str | None = "x-real-ip"

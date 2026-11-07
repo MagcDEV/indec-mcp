@@ -11,6 +11,18 @@ An AI and tooling layer over the official **[Catálogo API-INDEC](https://api.in
 - ✅ **Local MCP server** (stdio) over the mirror, tested end to end with Claude Code
 - ✅ **Hosted MCP**: `https://indec-mcp-production.up.railway.app/mcp`, with rate limits and a daily sync ([docs/deploy.md](docs/deploy.md))
 
+## Connect (hosted, no signup)
+
+Add `https://indec-mcp-production.up.railway.app/mcp` as a remote MCP server (Streamable HTTP):
+
+```bash
+claude mcp add --transport http indec https://indec-mcp-production.up.railway.app/mcp   # Claude Code
+```
+
+In Claude.ai, ChatGPT, Cursor and similar clients, add a custom connector or remote MCP server with the same URL.
+
+**Limits per client IP:** a burst of 20 requests, 30 per minute sustained, and 2000 per day. Over the limit you get HTTP 429 with `Retry-After`. The data syncs daily at 19:00 ART. Operations are covered in [docs/deploy.md](docs/deploy.md).
+
 ## MCP server
 
 The server has five read-only tools:

@@ -38,7 +38,18 @@ The INDEC API is never called on behalf of users. Only the daily sync calls it, 
 
 ### Client IP on Railway
 
-Railway documents `X-Real-IP` as the client-IP header ([specs & limits](https://docs.railway.com/networking/public-networking/specs-and-limits)). The rightmost `X-Forwarded-For` entry varies between requests, so keying rate limits on it would give every request a fresh bucket. This was observed in production on 2026-11-07, with 25 back-to-back requests and no 429. The production verification of `X-Real-IP` is recorded in the next section.
+Railway documents `X-Real-IP` as the client-IP header ([specs & limits](https://docs.railway.com/networking/public-networking/specs-and-limits)). The rightmost `X-Forwarded-For` entry varies between requests, so keying rate limits on it would give every request a fresh bucket. This was observed in production on 2026-11-07, with 25 back-to-back requests and no 429.
+
+**Verified in production on 2026-11-07, after switching to `X-Real-IP`:**
+
+| Test | Result |
+|---|---|
+| 25 requests, each with a *different forged* `X-Real-IP` | 24×200, then 429 (burst of 20 plus refill). Railway overwrites the header, so forged values don't create new buckets. |
+| Immediately after, forged `X-Forwarded-For` | 429 (same bucket) |
+| `/healthz` while rate limited | 200. Health and landing pages aren't limited. |
+| 429 response | Has `Retry-After` and a JSON-RPC error body |
+
+Re-run this check if a CDN or another proxy is ever put in front of the service.
 
 ## Routine operations
 

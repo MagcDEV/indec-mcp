@@ -6,8 +6,8 @@ Layers, all checked per request to the MCP endpoint:
 
 Client IP, in order of preference:
 - `ip_header` (e.g. `x-real-ip`): a single header that the platform's edge sets to the real
-  client IP. On Railway this is the documented header; docs/deploy.md records whether a
-  client-supplied value is overwritten in production.
+  client IP. On Railway this is the documented header, and we verified in production that a
+  client-supplied value is overwritten (docs/deploy.md).
 - otherwise X-Forwarded-For, counting `proxy_hops` entries from the right (for proxies that
   append); the leftmost entries can be forged by the client.
 - otherwise the socket peer.
