@@ -11,6 +11,16 @@ Everything needed to list the hosted server. Prepared 2026-11-07, from each dire
 | Icon | `docs/img/icon.png` (512×512, transparent) · raw: https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png |
 | License | MIT |
 
+## Status (2026-11-07)
+
+| Directory | Status |
+|---|---|
+| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp` v0.4.0, active |
+| awesome-mcp-servers | ⏳ [PR #18854](https://github.com/punkpeye/awesome-mcp-servers/pull/18854). `check-submission` passes. **Needs a Glama server badge** (see section 3) |
+| awesome-remote-mcp-servers | ⏳ [PR #4128](https://github.com/punkpeye/awesome-remote-mcp-servers/pull/4128). `check-submission` passes. **Needs a Glama connector badge** (see section 3) |
+| Glama | ⏳ Not listed yet. Submit manually (section 3) |
+| Anthropic Connectors Directory, MCP Market | To do (you) |
+
 ## Order and status
 
 | # | Directory | How | Who | Status |
@@ -104,9 +114,24 @@ Portal: [claude.ai/directory/manage](https://claude.ai/directory/manage) → **S
 4. Trade analysis: exports and imports with a country, by year and product.
 5. Demographics: population of a province or department, by sex or age, through 2040.
 
-## 3. Glama
+## 3. Glama (required by both awesome lists)
 
-Glama ingests the official registry, so this follows from #1. `glama.json` in the repo root lists `MagcDEV` as maintainer, which lets you claim the listing at glama.ai with your GitHub login.
+Both awesome-list PRs are blocked until the entries carry Glama badges. Glama says it ingests the official registry, but on 2026-11-07, right after publishing, our pages still returned 404. So submit both manually, signed in to glama.ai with GitHub (`glama.json` lists `MagcDEV` as maintainer):
+
+1. **Connector (hosted URL)**, for the remote list: https://glama.ai/mcp/connectors → add `https://indec-mcp-production.up.railway.app/mcp` (no auth).
+2. **Server (repo)**, for the main list: https://glama.ai/mcp/servers → add `https://github.com/MagcDEV/indec-mcp`. Glama asks for a Dockerfile in its UI. Paste this one, which was tested: it builds from the public repo and answers `initialize` and `tools/list` (17 tools) over stdio, with no data or token needed:
+
+```dockerfile
+FROM python:3.13-slim
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/* \
+ && pip install --no-cache-dir "git+https://github.com/MagcDEV/indec-mcp@main"
+# stdio MCP server; no data needed to start and answer introspection (tools/list, prompts/list)
+CMD ["indec-mcp"]
+```
+
+Then add the badges Glama shows to the PRs (on the `add-indec-mcp` branch of each fork), as the bots asked:
+- main list, after the description: `[![MagcDEV/indec-mcp MCP server](https://glama.ai/mcp/servers/MagcDEV/indec-mcp/badges/score.svg)](https://glama.ai/mcp/servers/MagcDEV/indec-mcp)`. Use the exact path Glama assigns.
+- remote list, as the second line of the entry: the connector badge, with the namespace and name Glama assigns.
 
 ## 4. awesome-mcp-servers: PR
 
