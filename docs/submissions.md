@@ -15,7 +15,7 @@ Everything needed to list the hosted server. Prepared 2026-11-07, from each dire
 
 | Directory | Status |
 |---|---|
-| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp`, active. The listing says v0.4.0; the server runs v0.4.4 at the same URL. Updating the label needs a fresh `mcp-publisher login github` |
+| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp`, **v0.4.4 is the latest version**, active |
 | Anthropic Connectors Directory | ⏳ **In review**: submitted through the portal as "INDEC Argentina (no oficial)", slug `indec-argentina` |
 | Glama | ✅ Server and connector listed, both **rated A** |
 | awesome-mcp-servers | ⏳ [PR #18854](https://github.com/punkpeye/awesome-mcp-servers/pull/18854): Glama server badge added, waiting for maintainers |
