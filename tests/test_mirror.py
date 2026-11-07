@@ -20,7 +20,7 @@ def mirror(tmp_path):
 
 def test_select_works_and_reports_source(mirror):
     res = mirror.query("SELECT count(*) AS n FROM pobreza_eph;")
-    assert res["columns"] == ["n"] and res["rows"] == [[2]]
+    assert res["columns"] == ["n"] and res["rows"] == [[3]]
     assert "INDEC" in res["source"]
 
 
@@ -68,7 +68,7 @@ def test_slow_queries_are_interrupted(mirror):
 
 
 def test_reopens_after_the_file_is_atomically_replaced(mirror, tmp_path):
-    assert mirror.query("SELECT count(*) FROM pobreza_eph")["rows"] == [[2]]
+    assert mirror.query("SELECT count(*) FROM pobreza_eph")["rows"] == [[3]]
     new = build(tmp_path / "new.duckdb")
     import duckdb
 
@@ -76,7 +76,7 @@ def test_reopens_after_the_file_is_atomically_replaced(mirror, tmp_path):
     con.execute("DELETE FROM pobreza_eph WHERE periodo = '20252S'")
     con.close()
     os.replace(new, mirror.db_path)
-    assert mirror.query("SELECT count(*) FROM pobreza_eph")["rows"] == [[1]]
+    assert mirror.query("SELECT count(*) FROM pobreza_eph")["rows"] == [[2]]
 
 
 def test_missing_mirror_gives_a_clear_error(tmp_path):

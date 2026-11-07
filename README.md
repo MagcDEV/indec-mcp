@@ -93,13 +93,13 @@ Sirve cualquier cliente MCP que acepte servidores remotos por **Streamable HTTP*
 |---|---|
 | **Inflación** | "¿Cuánto fue la inflación del último mes? ¿Y la núcleo?" · "¿Cómo viene alimentos en el NOA comparado con GBA?" |
 | **Salarios** | "¿Los salarios le ganaron a la inflación desde enero de 2024?" · "¿Y los del sector público?" |
-| **Canasta básica** | "¿Cuánto necesita una familia tipo para no ser pobre?" · "¿Cuánto subió la canasta en un año?" |
+| **Canasta básica y crianza** | "¿Cuánto necesita una familia tipo para no ser pobre?" · "¿Cuánto cuesta criar a un chico de 2 años?" |
 | **Pobreza y empleo** | "¿Cómo evolucionó la pobreza desde 2016?" · "¿Cuál es la desocupación hoy?" |
 | **Actividad e industria** | "¿Está creciendo la economía según el EMAE?" · "¿Cómo viene la producción industrial? ¿Y la automotriz?" · "¿Cuánto creció la producción de petróleo?" |
 | **Precios mayoristas y construcción** | "¿Cuánto subieron los precios mayoristas este año?" · "¿Le ganó el costo de la mano de obra en la construcción a los salarios?" |
 | **Comercio exterior** | "¿Cuánto le exportamos a China en 2025 y qué productos?" · "¿Cuánto importamos en bienes de capital por año?" |
 | **Población** | "¿Cuánta gente vive en Córdoba?" · "¿Cuál es el departamento más poblado de Mendoza?" |
-| **Lo que quieras** | Redeterminación de obras públicas, canasta de crianza y más: el asistente puede consultar los 19 datasets |
+| **Lo que quieras** | Redeterminación de obras públicas, cruces entre datasets y más: el asistente puede consultar los 19 datasets con SQL |
 
 En los clientes que muestran *prompts* MCP también tenés atajos listos: **informe de inflación**, **panorama económico**, **evolución de la pobreza**, **comercio con un país** y **salario real**.
 
@@ -194,7 +194,7 @@ Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni t
 ## Créditos
 
 - **Datos:** [INDEC](https://www.indec.gob.ar), mediante el [Catálogo API-INDEC](https://api.indec.gob.ar).
-- **Ideas:** varias funciones (buscar códigos de comercio exterior por nombre, informar los datos confidenciales, herramientas dedicadas para precios mayoristas, construcción e industria, los *prompts* y la guía de signos convencionales) están inspiradas en [SantinoSpingola/indec-mcp](https://github.com/SantinoSpingola/indec-mcp) (MIT). Se reimplementaron en Python, sin copiar su código.
+- **Ideas:** varias funciones (buscar códigos de comercio exterior por nombre, informar los datos confidenciales, herramientas dedicadas por tema (precios mayoristas, construcción, industria, salarios, actividad, canastas, pobreza y empleo), los *prompts* y la guía de signos convencionales) están inspiradas en [SantinoSpingola/indec-mcp](https://github.com/SantinoSpingola/indec-mcp) (MIT). Se reimplementaron en Python, sin copiar su código.
 - **Licencia:** [MIT](LICENSE).
 
 ---
@@ -207,4 +207,4 @@ Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni t
 https://indec-mcp-production.up.railway.app/mcp
 ```
 
-The server holds a daily copy of all 19 datasets in INDEC's new API. It offers 12 read-only tools (headline indicators; CPI, wholesale-price, construction-cost and industrial-production series; series comparison such as real wages; foreign trade with name lookup; population; and sandboxed SQL), plus 5 prompts and resources. Answers cite INDEC with the period of each figure and flag provisional or confidential data. Limits are 20 requests in a burst, 30 per minute and 2,000 per day for each client. The project is unofficial and MIT-licensed. Technical documentation is in [docs/development.md](docs/development.md).
+The server holds a daily copy of all 19 datasets in INDEC's new API. It offers 17 read-only tools: headline indicators; one tool per topic (CPI, wages, basic and child-raising baskets, poverty, labor market, EMAE by sector, wholesale prices, construction costs, industrial production, foreign trade with name lookup, population); series comparison such as real wages; and sandboxed SQL. It also has 5 prompts and resources. Answers cite INDEC with the period of each figure and flag provisional or confidential data. Limits are 20 requests in a burst, 30 per minute and 2,000 per day for each client. The project is unofficial and MIT-licensed. Technical documentation is in [docs/development.md](docs/development.md).

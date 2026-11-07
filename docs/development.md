@@ -23,7 +23,8 @@ indec-sync ──► data/indec.duckdb   (19 tables, ~2 M rows, ~32 MB, + _datas
 | `sync.py` | `indec-sync`: full refresh into DuckDB, validation, atomic swap |
 | `mirror.py` | Sandboxed read-only queries; IPC, snapshot and series comparison logic |
 | `topics.py` | Foreign trade (with code lookup and confidential-row reporting) and population |
-| `indices.py` | Wholesale prices, construction costs and industrial production, with one shared engine and a per-dataset spec |
+| `indices.py` | One shared engine with a per-dataset spec: wholesale prices, construction costs, industrial production, wages and EMAE |
+| `living.py` | Basic and child-raising baskets, poverty and the labor market |
 | `server.py` | MCP tools, prompts and resources (`indec-mcp`, stdio) |
 | `hosted.py`, `ratelimit.py`, `scheduler.py` | `indec-mcp-http`: HTTP transport, rate limits, daily sync |
 
@@ -33,12 +34,16 @@ indec-sync ──► data/indec.duckdb   (19 tables, ~2 M rows, ~32 MB, + _datas
 |---|---|
 | `latest_indicators` | Headline figures, each with its period: CPI (general and core), EMAE, wages, CBA/CBT, poverty, unemployment |
 | `inflation_series` | CPI by category (general, core, regulated, divisions…) and region: monthly, year-on-year and year-to-date changes, the index, or incidence |
-| `compare_series` | 2–4 monthly series (`ipc[:cat][@region]`, `salarios[:sector]`, `cbt`, `cba`, `emae`, `ipim`/`ipib`/`ipp`, `icc[:cat]`, `ipi[:branch]`, `ipi_minero`) aligned on their shared months. Shows published changes, or levels rebased to 100, plus a summary that is marked as computed (for example real wages) |
+| `compare_series` | 2–4 monthly series (`ipc[:cat][@region]`, `salarios[:sector]`, `cbt`, `cba`, `emae`, `ipim`/`ipib`/`ipp`, `icc[:cat]`, `ipi[:branch]`, `ipi_minero`, `emae:sector`) aligned on their shared months. Shows published changes, or levels rebased to 100, plus a summary that is marked as computed (for example real wages) |
 | `foreign_trade` | Exports and imports since 1986 by month, year, country or category, with names instead of codes. Reports the confidential rows the sums leave out |
 | `trade_codes` | Search the trade code dictionary, ignoring accents |
 | `population` | Country, province or department; by sex, age group or department; 2022–2040 |
 | `wholesale_prices` | IPIM, IPIB and IPP (since Dec 2015) for the overall level, domestic vs. imported, sector or CIIU product |
 | `construction_costs` | ICC for GBA (since Nov 2015): overall level, materials, labour, general expenses, work items and products |
+| `wages` | Wage index by sector (registered, unregistered, private, public): monthly, year-on-year and year-to-date changes, plus the index (base Oct-2016) |
+| `economic_activity` | EMAE overall level (original, seasonally adjusted and trend series) or by one of 16 sectors (original series only) |
+| `basic_baskets` | CBT/CBA in pesos per adult equivalent and for INDEC's 3 household types (GBA), or the child-raising basket by age group |
+| `poverty` / `labor_market` | EPH, 31 urban areas: poverty and indigence (half-yearly), and activity, employment, unemployment, formality and underemployment (quarterly) |
 | `industrial_production` | IPI manufacturing (since 2016, by division and branch) and mining (since 2017). `v_ia`/`v_acum` come from the original series and `v_m` from the seasonally adjusted one |
 | `list_datasets` / `describe_dataset` | The catalog, and each dataset's schema with the exact dimension values |
 | `query_sql` | Read-only DuckDB SQL for everything else |

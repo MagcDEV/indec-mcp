@@ -69,44 +69,65 @@ def _template() -> Path:
     con.executemany("INSERT INTO estimador_mensual_de_actividad_economica_nivel_general VALUES (?,?,?,?)", emae)
 
     # Wages: monthly to 2026-08. Code 121 has no index level, like the real public subsectors.
-    con.execute("""CREATE TABLE indice_salarios (periodo VARCHAR, codigo VARCHAR, descripcion VARCHAR,
+    con.execute("""CREATE TABLE indice_salarios (periodo VARCHAR, nivel VARCHAR, codigo VARCHAR, descripcion VARCHAR,
         tipo_de_indicador VARCHAR, valor DOUBLE, observaciones VARCHAR)""")
     sal = []
     for i, per in enumerate(months("202501", "202608")):
         last = per == "202608"
         sal += [
-            (per, "0", "Nivel general", "Indice", 2000.0 + 40 * i, None),
-            (per, "0", "Nivel general", "v_m", 2.73 if last else 2.0, None),
-            (per, "0", "Nivel general", "v_ia", 35.61 if last else 30.0, None),
-            (per, "100", "Total registrado", "Indice", 2000.0 + 20 * i, None),
-            (per, "100", "Total registrado", "v_m", 9.9 if last else 1.0, None),
-            (per, "121", "Subsector público nacional", "v_m", 1.5, None),
+            (per, "0", "0", "Nivel general", "Indice", 2000.0 + 40 * i, None),
+            (per, "0", "0", "Nivel general", "v_m", 2.73 if last else 2.0, None),
+            (per, "0", "0", "Nivel general", "v_ia", 35.61 if last else 30.0, None),
+            (per, "1", "100", "Total registrado", "Indice", 2000.0 + 20 * i, None),
+            (per, "1", "100", "Total registrado", "v_m", 9.9 if last else 1.0, None),
+            (per, "1", "200", "Total no registrado", "v_ia", 55.36, None),
+            (per, "3", "121", "Subsector público nacional", "v_m", 1.5, None),
         ]
-    con.executemany("INSERT INTO indice_salarios VALUES (?,?,?,?,?,?)", sal)
+    con.executemany("INSERT INTO indice_salarios VALUES (?,?,?,?,?,?,?)", sal)
 
-    # Baskets (GBA): monthly to 2026-09.
-    con.execute("""CREATE TABLE valorizacion_canastas_cba_cbt (periodo VARCHAR, descripcion VARCHAR,
+    # Baskets (GBA): monthly to 2026-09, per adult equivalent and for the three household types.
+    con.execute("""CREATE TABLE valorizacion_canastas_cba_cbt (periodo VARCHAR, codigo VARCHAR, descripcion VARCHAR,
         tipo_de_indicador VARCHAR, valor DOUBLE)""")
     can = []
     for i, per in enumerate(months("202501", "202609")):
         last = per == "202609"
+        cbt = 528318.67 if last else 400000.0 + 5000 * i
+        cba = 239058.22 if last else 180000.0 + 2000 * i
         can += [
-            (per, "Canasta Basica Total", "CBT", 528318.67 if last else 400000.0 + 5000 * i),
-            (per, "Canasta Basica Total", "v_m", 1.7),
-            (per, "Canasta Basica Total", "v_ia", 38.7 if last else 35.0),
-            (per, "Canasta Basica Alimentaria", "CBA", 239058.22 if last else 180000.0 + 2000 * i),
+            (per, "CBT", "Canasta Basica Total", "CBT", cbt),
+            (per, "CBT", "Canasta Basica Total", "v_m", 1.7),
+            (per, "CBT", "Canasta Basica Total", "v_ia", 38.7 if last else 35.0),
+            (per, "CBA", "Canasta Basica Alimentaria", "CBA", cba),
+            (per, "CBA", "Canasta Basica Alimentaria", "v_ia", 40.0),
+            (per, "CBT H1", "Canasta Basica Total, Hogar 1", "Hogar 1", round(cbt * 2.46, 2)),
+            (per, "CBT H2", "Canasta Basica Total, Hogar 2", "Hogar 2", 1632504.69 if last else round(cbt * 3.09, 2)),
+            (per, "CBT H3", "Canasta Basica Total, Hogar 3", "Hogar 3", round(cbt * 3.25, 2)),
         ]
-    can.append(("202609", "Canasta Basica Total, Hogar 2", "Hogar 2", 1632504.69))
-    con.executemany("INSERT INTO valorizacion_canastas_cba_cbt VALUES (?,?,?,?)", can)
+    con.executemany("INSERT INTO valorizacion_canastas_cba_cbt VALUES (?,?,?,?,?)", can)
+    con.execute("""CREATE TABLE canasta_crianza AS SELECT * FROM (VALUES
+        (2026, 8, '202608', 1.0, 2.0, 3.0, 10.0, 20.0, 30.0, 4.0, 5.0, 9.0, 6.0, 7.0, 13.0),
+        (2026, 9, '202609', 184911.53, 385920.04, 570831.58, 238764.09, 441051.48, 679815.57,
+         304094.69, 275657.17, 579751.87, 377230.63, 351618.96, 728849.59))
+        t(anio, mes, periodo, bys_men1, cuid_men1, tot_men1, bys_1a3, cuid_1a3, tot_1a3,
+          bys_4a5, cuid_4a5, tot_4a5, bys_6a12, cuid_6a12, tot_6a12)""")
     con.execute("""CREATE TABLE pobreza_eph AS
-        SELECT * FROM (VALUES ('T_31_A', '20261S', 24.4, 32.3, 7.5, 'Dato provisorio', CAST(NULL AS VARCHAR)),
-                              ('T_31_A', '20252S', 21.0, 28.2, 6.3, NULL, NULL))
-        t(area_geografica_nom, periodo, tasa_pobreza_hogares, tasa_pobreza_personas,
+        SELECT * FROM (VALUES ('T_31_A', '20261S', 24.4, 32.3, 5.6, 7.5, 'Dato provisorio', CAST(NULL AS VARCHAR)),
+                              ('T_31_A', '20252S', 21.0, 28.2, 4.8, 6.3, NULL, NULL),
+                              ('T_31_A', '20162S', 21.5, 30.3, 4.5, 6.1, NULL, NULL))
+        t(area_geografica_nom, periodo, tasa_pobreza_hogares, tasa_pobreza_personas, tasa_indigencia_hogares,
           tasa_indigencia_personas, observaciones, tasa_pobreza_personas_null)""")
     con.execute("""CREATE TABLE mercado_trabajo_eph AS
-        SELECT * FROM (VALUES ('T_31_A', '20262T', 48.9, 45.0, 20.2, 7.9, 'Dato provisorio'))
-        t(area_geografica_nom, periodo, tasa_de_actividad, tasa_de_empleo, tasa_de_empleo_informal,
-          tasa_de_desocupacion, observaciones)""")
+        SELECT * FROM (VALUES ('T_31_A', '20262T', 48.9, 45.0, 24.7, 20.2, 7.9, 11.5, 16.9, 'Dato provisorio'),
+                              ('T_31_A', '20261T', 48.6, 44.8, 24.9, 19.8, 7.8, 11.1, 15.8, NULL))
+        t(area_geografica_nom, periodo, tasa_de_actividad, tasa_de_empleo, tasa_de_empleo_formal,
+          tasa_de_empleo_informal, tasa_de_desocupacion, tasa_de_subocupacion, tasa_de_ocupacion_demandante,
+          observaciones)""")
+    # EMAE by sector: original series only (index and y/y change).
+    con.execute("""CREATE TABLE estimador_mensual_de_actividad_economica_sectores AS SELECT * FROM (VALUES
+        ('202608', 'F', 'Construcción', 'Variación porcentual interanual', -2.55, CAST(NULL AS VARCHAR)),
+        ('202608', 'F', 'Construcción', 'Índice base 2004=100', 140.2, NULL),
+        ('202608', 'G', 'Comercio mayorista, minorista y reparaciones', 'Variación porcentual interanual', -3.5, NULL))
+        t(periodo, codigo, descripcion, tipo_de_indicador, valor, observaciones)""")
 
     # Foreign trade: dictionary + exports/imports with confidential ('s') rows, like the real data.
     con.execute("""CREATE TABLE comercio_exterior_nomenclaturas AS SELECT * FROM (VALUES

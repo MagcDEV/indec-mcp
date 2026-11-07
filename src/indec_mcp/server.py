@@ -18,7 +18,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import Icon, ToolAnnotations
 from pydantic import Field
 
-from . import indices, topics
+from . import indices, living, topics
 from .mirror import IPC_MEASURES, IPC_REGIONS, SOURCE, Limits, Mirror, QueryError
 
 INSTRUCTIONS = """\
@@ -35,8 +35,10 @@ Cómo usar estas herramientas:
 Acepta nombres ("Brasil", "MOA", "bienes de capital"); `trade_codes` busca códigos.
 5. Población (país, provincia o departamento; por sexo o edad; 2022-2040): `population`.
 6. Precios mayoristas: `wholesale_prices`. Costo de la construcción: `construction_costs`. Producción \
-industrial y minera: `industrial_production`.
-7. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
+industrial y minera: `industrial_production`. Actividad (EMAE, general o por sector): `economic_activity`.
+7. Salarios: `wages`. Canastas básicas y de crianza: `basic_baskets`. Pobreza: `poverty`. Empleo y \
+desocupación: `labor_market`.
+8. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
 exactos de cada dimensión; los filtros distinguen mayúsculas) → `query_sql`.
 
 Reglas al responder:
@@ -49,9 +51,13 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 REPO_URL = "https://github.com/MagcDEV/indec-mcp"
 ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
+
+# Shared parameter types (module level: annotations are evaluated against module globals).
+StartPeriod = Annotated[str | None, Field(description="Desde, 'AAAA-MM' o 'AAAA'.")]
+EndPeriod = Annotated[str | None, Field(description="Hasta, 'AAAA-MM' o 'AAAA' (inclusive).")]
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
@@ -137,7 +143,7 @@ def create_server(mirror: Mirror) -> MCPServer:
                   "'ipc:Núcleo', 'ipc:Alimentos@GBA'), 'salarios[:sector]' (sector: registrado, no registrado, "
                   "privado registrado, público), 'cbt' / 'cba' (canastas básicas GBA, en pesos), 'emae', "
                   "'ipim' / 'ipib' / 'ipp' (mayoristas), 'icc[:categoría]' (construcción, ej. 'icc:Mano de obra'), "
-                  "'ipi[:rama]' (industria) e 'ipi_minero'."),
+                  "'ipi[:rama]' (industria), 'ipi_minero' y 'emae:sector' (ej. 'emae:Construcción')."),
         ],
         measure: Annotated[
             str,
@@ -205,6 +211,95 @@ def create_server(mirror: Mirror) -> MCPServer:
         """Población estimada y proyectada al 1° de julio (base Censo 2022) para el país, una provincia
         o un departamento, con apertura por sexo, grupos de edad o departamentos."""
         return topics.population(mirror, place, year, by)
+
+    @server.tool(title="Salarios (índice de salarios)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def wages(
+        sector: Annotated[
+            str,
+            Field(description="'nivel general' (por defecto), 'registrado', 'no registrado', 'privado registrado', "
+                  "'público', 'público nacional' o 'público provincial'."),
+        ] = "nivel general",
+        measures: Annotated[
+            list[str] | None,
+            Field(description="'v_m' mensual, 'v_ia' interanual, 'v_acum' acumulada en el año, 'indice' "
+                  "(base oct-2016 = 100). Por defecto ['v_m', 'v_ia']."),
+        ] = None,
+        start: StartPeriod = None,
+        end: EndPeriod = None,
+    ) -> dict[str, Any]:
+        """Evolución de los salarios por sector (índice de salarios, desde oct-2015): variaciones mensual,
+        interanual y acumulada publicadas por el INDEC. Para compararlos con la inflación usá compare_series."""
+        code = mirror._resolve_wage_code(sector or "nivel general")
+        return indices.series(mirror, "SALARIOS", code, measures, start, end)
+
+    @server.tool(title="Actividad económica (EMAE)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def economic_activity(
+        sector: Annotated[
+            str | None,
+            Field(description="Vacío = nivel general. Sector, ej. 'Construcción', 'Industria manufacturera', "
+                  "'Comercio', 'Agricultura', 'Intermediación financiera', 'Explotación de minas y canteras'."),
+        ] = None,
+        measures: Annotated[
+            list[str] | None,
+            Field(description="Nivel general: 'v_ia' (original), 'v_m' (desestacionalizada), 'indice', "
+                  "'indice_desestacionalizado', 'v_m_tendencia', 'indice_tendencia'. Sectores: 'v_ia', 'indice'. "
+                  "Por defecto ['v_ia', 'v_m'] (general) o ['v_ia'] (sector)."),
+        ] = None,
+        start: StartPeriod = None,
+        end: EndPeriod = None,
+    ) -> dict[str, Any]:
+        """Estimador mensual de actividad económica (EMAE, base 2004 = 100): nivel general desde 2004 y 16
+        sectores. Es el indicador mensual que anticipa el PIB."""
+        general = indices._norm(sector or "") in indices._GENERAL
+        return indices.series(mirror, "EMAE_GENERAL" if general else "EMAE_SECTORES",
+                              None if general else sector, measures, start, end)
+
+    @server.tool(title="Canastas básicas (CBA, CBT) y canasta de crianza", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def basic_baskets(
+        basket: Annotated[
+            str,
+            Field(description="'CBT' canasta básica total = línea de pobreza (por defecto), 'CBA' alimentaria = "
+                  "línea de indigencia, o 'crianza' (costo de criar a un niño o niña)."),
+        ] = "CBT",
+        age_group: Annotated[
+            str | None,
+            Field(description="Solo para 'crianza': 'menores de 1', '1 a 3', '4 a 5' o '6 a 12' (años). Vacío = "
+                  "total de cada tramo."),
+        ] = None,
+        start: Annotated[str | None, Field(description="Desde, 'AAAA-MM'. Por defecto, últimos 13 meses.")] = None,
+        end: EndPeriod = None,
+    ) -> dict[str, Any]:
+        """Valor en pesos de las canastas básicas del Gran Buenos Aires (desde abr-2016) por adulto equivalente y
+        para los 3 hogares tipo, con sus variaciones; o la canasta de crianza (desde 2020) por tramo de edad."""
+        return living.basic_baskets(mirror, basket, age_group, start, end)
+
+    @server.tool(title="Pobreza e indigencia (EPH)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def poverty(
+        start: Annotated[str | None, Field(description="Desde, 'AAAA' o semestre 'AAAA1S'/'AAAA2S'. Vacío = toda la serie.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA' o 'AAAA1S'/'AAAA2S'.")] = None,
+    ) -> dict[str, Any]:
+        """Porcentaje de personas y hogares bajo la línea de pobreza e indigencia, semestral desde el 2° semestre
+        de 2016 (total 31 aglomerados urbanos, EPH)."""
+        return living.poverty(mirror, start, end)
+
+    @server.tool(title="Mercado de trabajo (EPH)", annotations=READ_ONLY)
+    @_tool_errors
+    @cached
+    def labor_market(
+        start: Annotated[str | None, Field(description="Desde, 'AAAA' o trimestre 'AAAA1T'…'AAAA4T'. Vacío = toda la serie.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA' o 'AAAA1T'…'AAAA4T'.")] = None,
+    ) -> dict[str, Any]:
+        """Tasas trimestrales de actividad, empleo, desocupación, empleo formal e informal y subocupación desde
+        el 2° trimestre de 2016 (total 31 aglomerados urbanos, EPH)."""
+        return living.labor_market(mirror, start, end)
 
     @server.tool(title="Precios mayoristas (IPIM, IPIB, IPP)", annotations=READ_ONLY)
     @_tool_errors

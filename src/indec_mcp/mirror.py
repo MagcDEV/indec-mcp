@@ -37,9 +37,9 @@ IPC_REGIONS = ("Nacional", "GBA", "Pampeana", "Noreste", "Noroeste", "Cuyo", "Pa
 
 
 _INDEX_KINDS = {"ipim": "IPIM", "ipib": "IPIB", "ipp": "IPP", "icc": "ICC", "ipi": "IPI_MANUFACTURERO",
-                "ipi_manufacturero": "IPI_MANUFACTURERO", "ipi_minero": "IPI_MINERO"}
+                "ipi_manufacturero": "IPI_MANUFACTURERO", "ipi_minero": "IPI_MINERO", "emae_sector": "EMAE_SECTORES"}
 _INDEX_LABELS = {"IPIM": "IPIM", "IPIB": "IPIB", "IPP": "IPP", "ICC": "Costo construcción",
-                 "IPI_MANUFACTURERO": "IPI manufacturero", "IPI_MINERO": "IPI minero"}
+                 "IPI_MANUFACTURERO": "IPI manufacturero", "IPI_MINERO": "IPI minero", "EMAE_SECTORES": "EMAE"}
 
 
 class QueryError(ValueError):
@@ -446,6 +446,8 @@ class Mirror:
         if "@" in kind:  # 'ipc@GBA'
             kind, _, reg_part = kind.partition("@")
             rest = f"Nivel general@{reg_part}"
+        if kind == "emae" and rest:  # 'emae:Construcción' -> sector series
+            kind = "emae_sector"
         notes: list[str] = []
 
         if kind == "ipc":
@@ -506,13 +508,16 @@ class Mirror:
             cat = indices._resolve(self, ds, rest or None)
             is_ipi = ds.key.startswith("IPI_")
             idx = ds.measures["indice_desestacionalizado" if is_ipi else "indice"].sql
+            vm = ds.measures["v_m"].sql if "v_m" in ds.measures else "FALSE"  # EMAE sectors: no monthly change
             desc = "Nivel general" if "nivel general" in cat["descripcion"].lower() else cat["descripcion"]
             label = f"{_INDEX_LABELS[ds.key]}: {desc}"
             if is_ipi:
                 notes.append(f"{_INDEX_LABELS[ds.key]}: índice y v_m de la serie desestacionalizada; v_ia, de la original.")
+            if ds.key == "EMAE_SECTORES":
+                notes.append("EMAE por sector: solo serie original (índice y v_ia); no hay variación mensual.")
             obs = "observaciones" if ds.has_observaciones else "NULL"
             rows = self._records(
-                f"SELECT periodo, CASE WHEN {idx} THEN 'index' WHEN {ds.measures['v_m'].sql} THEN 'v_m' "
+                f"SELECT periodo, CASE WHEN {idx} THEN 'index' WHEN {vm} THEN 'v_m' "
                 f"WHEN {ds.measures['v_ia'].sql} THEN 'v_ia' END AS t, valor, {obs} AS observaciones "
                 f"FROM {ds.table} WHERE {ds.scope_sql} AND " + " AND ".join(f"{c} = ?" for c in ds.id_cols),
                 [cat[c] for c in ds.id_cols], max_rows=10_000,

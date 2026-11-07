@@ -81,6 +81,20 @@ WHOLESALE_INDICES = {
     "IPP": "Índice de precios básicos del productor (solo productos nacionales)",
 }
 
+_EMAE_GENERAL = {
+    "v_ia": Measure("Variación % interanual (serie original)",
+                    "tipo_de_indicador_descripcion = 'Var % interanual serie original'"),
+    "v_m": Measure("Variación % mensual (serie desestacionalizada)",
+                   "tipo_de_indicador_descripcion = 'Var % mensual serie desestacionalizada'"),
+    "indice": Measure("Índice base 2004 = 100 (serie original)", "tipo_de_indicador_descripcion = 'Índice serie original'"),
+    "indice_desestacionalizado": Measure("Índice base 2004 = 100 (serie desestacionalizada)",
+                                         "tipo_de_indicador_descripcion = 'Índice serie desestacionalizada'"),
+    "v_m_tendencia": Measure("Variación % mensual (serie tendencia-ciclo)",
+                             "tipo_de_indicador_descripcion = 'Var % mensual serie tendencia-ciclo'"),
+    "indice_tendencia": Measure("Índice base 2004 = 100 (serie tendencia-ciclo)",
+                                "tipo_de_indicador_descripcion = 'Índice serie tendencia-ciclo'"),
+}
+
 DATASETS = {
     **{
         k: Spec(
@@ -98,6 +112,31 @@ DATASETS = {
         id_cols=("clasificador", "nivel", "codigo_apertura", "descripcion"), code_col="codigo_apertura",
         level_col="nivel", scope_sql="indicador = 'ICC'", measures=_PRICE_MEASURES, default_measures=("v_m", "v_ia"),
         notes=("Base 1993; nivel ene-2022 = 100. Corresponde a vivienda tipo en el Gran Buenos Aires.",),
+    ),
+    "SALARIOS": Spec(
+        key="SALARIOS", table="indice_salarios", title="Índice de salarios (base oct-2016 = 100)",
+        id_cols=("nivel", "codigo", "descripcion"), code_col="codigo", level_col="nivel",
+        measures={k: v for k, v in _PRICE_MEASURES.items() if k != "incidencia"}, default_measures=("v_m", "v_ia"),
+        notes=("Mide la evolución de los salarios (no su nivel en pesos), aislando horas trabajadas, ausentismo y premios.",
+               "Los salarios no registrados se publican con ~5 meses de rezago respecto del período informado.",
+               "Los subsectores públicos nacional y provincial no tienen índice publicado, solo variaciones."),
+    ),
+    "EMAE_GENERAL": Spec(
+        key="EMAE_GENERAL", table="estimador_mensual_de_actividad_economica_nivel_general",
+        title="EMAE: Estimador mensual de actividad económica, nivel general (base 2004 = 100)",
+        id_cols=(), code_col="", measures=_EMAE_GENERAL, default_measures=("v_ia", "v_m"),
+        notes=("v_ia viene de la serie original; v_m, de la desestacionalizada. Anticipa la evolución del PIB.",),
+    ),
+    "EMAE_SECTORES": Spec(
+        key="EMAE_SECTORES", table="estimador_mensual_de_actividad_economica_sectores",
+        title="EMAE por sector de actividad (base 2004 = 100, serie original)",
+        id_cols=("codigo", "descripcion"), code_col="codigo",
+        measures={
+            "v_ia": Measure("Variación % interanual (serie original)", "tipo_de_indicador = 'Variación porcentual interanual'"),
+            "indice": Measure("Índice base 2004 = 100 (serie original)", "tipo_de_indicador = 'Índice base 2004=100'"),
+        },
+        default_measures=("v_ia",),
+        notes=("Por sector solo se publica la serie original (índice y variación interanual), sin desestacionalizar.",),
     ),
     "IPI_MANUFACTURERO": Spec(
         key="IPI_MANUFACTURERO", table="ipi_manufacturero",
@@ -122,6 +161,10 @@ DATASETS = {
 
 
 def _resolve(m: Mirror, spec: Spec, category: str | None) -> dict:
+    if not spec.id_cols:  # single-series table (e.g. EMAE nivel general)
+        if _norm(category or "") not in _GENERAL:
+            raise QueryError(f"{spec.key} no tiene categorías: es un único nivel general.")
+        return {"descripcion": "Nivel general"}
     cols = ", ".join(spec.id_cols)
     rows = m._records(
         f"SELECT DISTINCT {cols}{', ' + spec.level_col if spec.level_col and spec.level_col not in spec.id_cols else ''} "
@@ -209,7 +252,7 @@ def series(
         "indice": spec.title,
         "categoria": cat["descripcion"],
         **({"nivel": cat[spec.level_col]} if spec.level_col else {}),
-        "codigo": cat[spec.code_col],
+        **({"codigo": cat[spec.code_col]} if spec.code_col else {}),
         "medidas": {x: spec.measures[x].label for x in measures},
         "rows": rows,
         "notas": notes,
