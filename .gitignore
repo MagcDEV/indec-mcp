@@ -1,0 +1,6 @@
+.env
+*.duckdb
+*.duckdb.wal
+data/
+__pycache__/
+node_modules/
