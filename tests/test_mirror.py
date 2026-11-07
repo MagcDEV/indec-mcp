@@ -213,3 +213,53 @@ def test_when_all_slots_are_busy_callers_get_a_clear_error(tmp_path):
         m.query("SELECT 1")
     t.join()
     assert m.query("SELECT 1")["rows"] == [[1]]  # free again
+
+
+# -- compare ----------------------------------------------------------------------------------
+
+
+def test_compare_aligns_on_common_months_and_uses_published_changes(mirror):
+    r = mirror.compare(["salarios", "ipc"], "v_ia")
+    # Wages end in 2026-08, IPC in 2026-09: only common months, last 13 by default.
+    periods = [row["periodo"] for row in r["rows"]]
+    assert periods[-1] == "2026-08" and len(periods) == 13
+    assert r["rows"][-1]["Salarios: Nivel general"] == 35.61
+    assert {s["ultimo_periodo"] for s in r["series"]} == {"2026-08", "2026-09"}
+
+
+def test_compare_summary_is_computed_from_levels_and_labelled(mirror):
+    r = mirror.compare(["salarios", "ipc"], "base100", start="2025-01", end="2025-04")
+    assert r["rows"][0]["Salarios: Nivel general"] == 100.0
+    # Wages 2000 -> 2120 (+6.0%); IPC 1000+12 -> 1000+15 in the fixture.
+    ch = r["summary"]["variacion_entre_niveles_pct"]
+    assert ch["Salarios: Nivel general"] == 6.0
+    assert ch["IPC Nivel general (Nacional)"] == round((1015 / 1012 - 1) * 100, 1)
+    assert "CALCULADO" in r["summary"]["nota"]
+    assert r["summary"]["relativo_pct"] == round((1.06 / (1 + ch["IPC Nivel general (Nacional)"] / 100) - 1) * 100, 1)
+
+
+def test_compare_resolves_series_ids(mirror):
+    r = mirror.compare(["salarios:registrado", "cbt", "ipc:Núcleo@GBA", "emae"], "v_m", start="2026-01")
+    labels = [s["label"] for s in r["series"]]
+    assert labels == ["Salarios: Total registrado", "CBT por adulto equivalente (GBA, $)",
+                      "IPC Núcleo (GBA)", "EMAE nivel general"]
+    assert r["rows"][-1]["EMAE nivel general"] == 0.07  # rounded
+    assert any("desestacionalizada" in n for n in r["notes"])
+
+
+def test_compare_handles_series_without_index_level(mirror):
+    r = mirror.compare(["salarios:público nacional", "ipc"], "base100", start="2026-01")
+    assert r["summary"]["variacion_entre_niveles_pct"]["Salarios: Subsector público nacional"] is None
+    assert "Sin índice publicado" in r["summary"]["sin_nivel"]
+    assert "relativo_pct" not in r["summary"]
+
+
+@pytest.mark.parametrize(
+    "args, match",
+    [((["ipc"],), "entre 2 y 4"), ((["ipc", "pbi"],), "Serie desconocida"),
+     ((["ipc", "salarios:jubilados"],), "no encontrado"), ((["ipc", "cbt"], "yoy"), "measure"),
+     ((["ipc@Mendoza", "cbt"],), "Región inválida"), ((["ipc", "cbt"], "v_ia", "2020-01", "2020-06"), "en común")],
+)
+def test_compare_validates(mirror, args, match):
+    with pytest.raises(QueryError, match=match):
+        mirror.compare(*args)

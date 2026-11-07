@@ -367,6 +367,205 @@ class Mirror:
             "source": f"{SOURCE} Índice de Precios al Consumidor (ipc_nacional).",
         }
 
+    # -- comparable series ------------------------------------------------------------------
+
+    def _series(self, spec: str) -> dict:
+        """Resolve a series id to {label, table, notes, data: {periodo: {index, v_m, v_ia, obs}}}.
+
+        Ids: 'ipc[:categoría][@región]', 'salarios[:sector]', 'cbt', 'cba', 'emae'.
+        `index` is a level usable for rebasing (IPC/salarios/EMAE index; CBT/CBA in pesos).
+        """
+        raw = spec.strip()
+        kind, _, rest = raw.partition(":")
+        kind = kind.strip().lower()
+        if "@" in kind:  # 'ipc@GBA'
+            kind, _, reg_part = kind.partition("@")
+            rest = f"Nivel general@{reg_part}"
+        notes: list[str] = []
+
+        if kind == "ipc":
+            cat_part, _, reg_part = (rest or "Nivel general").partition("@")
+            region = next((r for r in IPC_REGIONS if r.lower() == (reg_part or "Nacional").strip().lower()), None)
+            if region is None:
+                raise QueryError(f"Región inválida en {spec!r}. Válidas: {', '.join(IPC_REGIONS)}")
+            cat = self._resolve_ipc_category(cat_part or "Nivel general", region)
+            label = f"IPC {cat['descripcion']} ({region})"
+            rows = self._records(
+                "SELECT periodo, tipo_de_indicador AS t, valor, observaciones FROM ipc_nacional "
+                "WHERE clasificador = ? AND nivel = ? AND codigo = ? AND region = ? "
+                "AND tipo_de_indicador IN ('Indice', 'v_m', 'v_ia')",
+                [cat["clasificador"], cat["nivel"], cat["codigo"], region], max_rows=10_000,
+            )
+            mapping, table = {"Indice": "index", "v_m": "v_m", "v_ia": "v_ia"}, "ipc_nacional"
+
+        elif kind in ("salarios", "salario", "wages"):
+            code = self._resolve_wage_code(rest or "Nivel general")
+            desc = self._records("SELECT DISTINCT descripcion FROM indice_salarios WHERE codigo = ?", [code])[0]["descripcion"]
+            label = f"Salarios: {desc}"
+            if code == "200":
+                notes.append("Salarios no registrados: INDEC los publica con ~5 meses de rezago respecto del período.")
+            rows = self._records(
+                "SELECT periodo, tipo_de_indicador AS t, valor, observaciones FROM indice_salarios "
+                "WHERE codigo = ? AND tipo_de_indicador IN ('Indice', 'v_m', 'v_ia')",
+                [code], max_rows=10_000,
+            )
+            mapping, table = {"Indice": "index", "v_m": "v_m", "v_ia": "v_ia"}, "indice_salarios"
+
+        elif kind in ("cbt", "cba"):
+            desc = "Canasta Basica Total" if kind == "cbt" else "Canasta Basica Alimentaria"
+            label = f"{kind.upper()} por adulto equivalente (GBA, $)"
+            rows = self._records(
+                "SELECT periodo, tipo_de_indicador AS t, valor, NULL AS observaciones "
+                "FROM valorizacion_canastas_cba_cbt WHERE descripcion = ? AND tipo_de_indicador IN (?, 'v_m', 'v_ia')",
+                [desc, kind.upper()], max_rows=10_000,
+            )
+            mapping, table = {kind.upper(): "index", "v_m": "v_m", "v_ia": "v_ia"}, "valorizacion_canastas_cba_cbt"
+
+        elif kind == "emae":
+            label = "EMAE nivel general"
+            notes.append("EMAE: v_m e índice usan la serie desestacionalizada; v_ia, la serie original.")
+            rows = self._records(
+                "SELECT periodo, CASE tipo_de_indicador_descripcion "
+                "  WHEN 'Índice serie desestacionalizada' THEN 'index' "
+                "  WHEN 'Var % mensual serie desestacionalizada' THEN 'v_m' "
+                "  WHEN 'Var % interanual serie original' THEN 'v_ia' END AS t, valor, observaciones "
+                "FROM estimador_mensual_de_actividad_economica_nivel_general",
+                max_rows=10_000,
+            )
+            mapping, table = {"index": "index", "v_m": "v_m", "v_ia": "v_ia"}, \
+                "estimador_mensual_de_actividad_economica_nivel_general"
+        else:
+            raise QueryError(
+                f"Serie desconocida {spec!r}. Usá: 'ipc[:categoría][@región]' (ej. 'ipc:Alimentos@GBA'), "
+                "'salarios[:registrado|no registrado|privado registrado|público]', 'cbt', 'cba', 'emae'."
+            )
+
+        data: dict[str, dict] = {}
+        for r in rows:
+            key = mapping.get(r["t"])
+            if key is None:
+                continue
+            d = data.setdefault(r["periodo"], {"index": None, "v_m": None, "v_ia": None, "obs": None})
+            d[key] = r["valor"]
+            if r["observaciones"]:
+                d["obs"] = r["observaciones"]
+        if not data:
+            raise QueryError(f"La serie {spec!r} no tiene datos.")
+        return {"id": raw, "label": label, "table": table, "notes": notes, "data": data}
+
+    def _resolve_wage_code(self, name: str) -> str:
+        aliases = {
+            "nivel general": "0", "general": "0", "total": "0",
+            "registrado": "100", "registrados": "100", "total registrado": "100",
+            "no registrado": "200", "no registrados": "200", "informal": "200", "total no registrado": "200",
+            "privado": "110", "privado registrado": "110", "sector privado registrado": "110",
+            "publico": "120", "público": "120", "sector público": "120",
+            "publico nacional": "121", "público nacional": "121",
+            "publico provincial": "122", "público provincial": "122",
+        }
+        key = name.strip().lower()
+        if key in aliases:
+            return aliases[key]
+        rows = self._records(
+            "SELECT DISTINCT codigo, descripcion FROM indice_salarios WHERE codigo = ? OR descripcion ILIKE ?",
+            [name.strip(), f"%{name.strip()}%"],
+        )
+        if len(rows) == 1:
+            return rows[0]["codigo"]
+        opts = self._records("SELECT DISTINCT codigo, descripcion FROM indice_salarios ORDER BY codigo")
+        raise QueryError(
+            f"Sector de salarios {name!r} no encontrado o ambiguo. Opciones: "
+            + "; ".join(f"{o['descripcion']} ({o['codigo']})" for o in opts)
+        )
+
+    def compare(
+        self,
+        series: list[str],
+        measure: str = "v_ia",
+        start: str | None = None,
+        end: str | None = None,
+    ) -> dict:
+        if not 2 <= len(series) <= 4:
+            raise QueryError("Compará entre 2 y 4 series.")
+        if measure not in ("v_ia", "v_m", "base100"):
+            raise QueryError("measure debe ser 'v_ia' (interanual), 'v_m' (mensual) o 'base100' (índice rebasado).")
+        frames = [self._series(s) for s in series]
+        start, end = parse_period(start), parse_period(end)
+        for p in (start, end):
+            if p is not None and not re.fullmatch(r"\d{6}", p):
+                raise QueryError("Para comparar series mensuales usá períodos 'AAAA-MM'.")
+
+        common = sorted(set.intersection(*(set(f["data"]) for f in frames)))
+        if end:
+            common = [p for p in common if p <= end]
+        if start:
+            common = [p for p in common if p >= start]
+        elif common:
+            common = common[-13:]  # default: last 13 common months
+        if not common:
+            raise QueryError("Las series no tienen meses en común en ese rango.")
+
+        def val(f, p, key):
+            return f["data"][p][key]
+
+        rows = []
+        for p in common:
+            row: dict[str, Any] = {"periodo": format_period(p)}
+            for f in frames:
+                if measure == "base100":
+                    base = val(f, common[0], "index")
+                    cur = val(f, p, "index")
+                    row[f["label"]] = round(cur / base * 100, 2) if base and cur is not None else None
+                else:
+                    v = val(f, p, measure)
+                    row[f["label"]] = round(v, 2) if isinstance(v, float) else v
+            flags = sorted({val(f, p, "obs") for f in frames if val(f, p, "obs")})
+            if flags:
+                row["observaciones"] = "; ".join(flags)
+            rows.append(row)
+
+        first, last = common[0], common[-1]
+        changes = {}
+        for f in frames:
+            a, b = val(f, first, "index"), val(f, last, "index")
+            changes[f["label"]] = round((b / a - 1) * 100, 1) if a and b is not None else None
+        summary: dict[str, Any] = {
+            "desde": format_period(first),
+            "hasta": format_period(last),
+            "variacion_entre_niveles_pct": changes,
+            "nota": (
+                f"CALCULADO por este servicio a partir de niveles publicados: variación entre el nivel de "
+                f"{format_period(first)} y el de {format_period(last)} (no incluye la variación del propio "
+                f"mes inicial). No es una cifra oficial; puede diferir por redondeo."
+            ),
+        }
+        missing = [k for k, v in changes.items() if v is None]
+        if missing:
+            summary["sin_nivel"] = f"Sin índice publicado para: {', '.join(missing)} (solo variaciones v_m / v_ia)."
+        labels = [f["label"] for f in frames]
+        if len(frames) == 2 and None not in changes.values():
+            a, b = changes[labels[0]], changes[labels[1]]
+            summary["relativo_pct"] = round(((1 + a / 100) / (1 + b / 100) - 1) * 100, 1)
+            summary["relativo_explicacion"] = (
+                f"Cuánto varió '{labels[0]}' en términos de '{labels[1]}' "
+                f"(ej. salario real si la segunda serie es el IPC). Calculado."
+            )
+
+        return {
+            "measure": {"v_ia": "Variación % interanual (publicada)", "v_m": "Variación % mensual (publicada)",
+                        "base100": f"Nivel rebasado a {format_period(first)} = 100 (calculado)"}[measure],
+            "series": [
+                {"id": f["id"], "label": f["label"], "dataset": f["table"],
+                 "ultimo_periodo": format_period(max(f["data"]))}
+                for f in frames
+            ],
+            "rows": rows,
+            "summary": summary,
+            "notes": [n for f in frames for n in f["notes"]]
+                     + ["Solo se muestran los meses que todas las series tienen en común."],
+            "source": SOURCE,
+        }
+
     def snapshot(self) -> dict:
         """Latest headline figures across datasets, each with its own period."""
         out: dict[str, Any] = {}

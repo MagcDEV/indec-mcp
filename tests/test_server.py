@@ -20,7 +20,8 @@ def run(coro):
 
 def test_exposes_read_only_tools(server):
     tools = {t.name: t for t in run(server.list_tools())}
-    assert set(tools) == {"latest_indicators", "inflation_series", "list_datasets", "describe_dataset", "query_sql"}
+    assert set(tools) == {"latest_indicators", "inflation_series", "compare_series", "list_datasets",
+                          "describe_dataset", "query_sql"}
     assert all(t.annotations.read_only_hint and not t.annotations.open_world_hint for t in tools.values())
     assert set(tools["inflation_series"].input_schema["properties"]) == {"category", "region", "measures", "start", "end"}
     assert "500 filas" in tools["query_sql"].description

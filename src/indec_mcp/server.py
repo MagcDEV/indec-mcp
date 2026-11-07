@@ -27,7 +27,9 @@ de trabajo (EPH), precios mayoristas y de la construcción, comercio exterior y 
 Cómo usar estas herramientas:
 1. Para "¿cómo está la economía?" o cifras de titular, empezá por `latest_indicators`.
 2. Para inflación (general, núcleo, por división o región) usá `inflation_series`.
-3. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
+3. Para comparar series (salario real, salarios vs canasta, regiones, actividad vs precios) usá \
+`compare_series`.
+4. Para cualquier otra cosa: `list_datasets` → `describe_dataset` (muestra columnas y los valores \
 exactos de cada dimensión; los filtros distinguen mayúsculas) → `query_sql`.
 
 Reglas al responder:
@@ -92,6 +94,29 @@ def create_server(mirror: Mirror) -> MCPServer:
         """Serie mensual del Índice de Precios al Consumidor (IPC, base dic-2016) desde diciembre
         2016: variación mensual, interanual, acumulada, índice o incidencias, por categoría y región."""
         return mirror.ipc_series(category, region, measures, start, end)
+
+    @server.tool(annotations=READ_ONLY)
+    @_tool_errors
+    def compare_series(
+        series: Annotated[
+            list[str],
+            Field(description="2 a 4 ids de serie mensual: 'ipc[:categoría][@región]' (ej. 'ipc', "
+                  "'ipc:Núcleo', 'ipc:Alimentos@GBA'), 'salarios[:sector]' (sector: registrado, no registrado, "
+                  "privado registrado, público), 'cbt' / 'cba' (canastas básicas GBA, en pesos), 'emae'."),
+        ],
+        measure: Annotated[
+            str,
+            Field(description="'v_ia' variación interanual publicada (por defecto), 'v_m' mensual publicada, "
+                  "o 'base100' niveles rebasados a 100 en el primer mes."),
+        ] = "v_ia",
+        start: Annotated[str | None, Field(description="Desde, 'AAAA-MM'. Por defecto, últimos 13 meses en común.")] = None,
+        end: Annotated[str | None, Field(description="Hasta, 'AAAA-MM' (inclusive).")] = None,
+    ) -> dict[str, Any]:
+        """Compara series mensuales en los meses que tienen en común: salarios vs inflación (salario
+        real), canasta básica vs salarios, IPC por región o categoría, actividad vs precios. Devuelve
+        la tabla y un resumen con la variación entre el primer y el último mes de cada serie y, con
+        2 series, la variación relativa (ej. salario real). El resumen es CALCULADO: decilo al usarlo."""
+        return mirror.compare(series, measure, start, end)
 
     @server.tool(annotations=READ_ONLY)
     @_tool_errors

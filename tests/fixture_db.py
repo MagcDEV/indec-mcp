@@ -52,22 +52,52 @@ def _template() -> Path:
                 ]
     con.executemany("INSERT INTO ipc_nacional VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
 
-    con.execute("""CREATE TABLE estimador_mensual_de_actividad_economica_nivel_general AS
-        SELECT * FROM (VALUES ('202608', 'Var % interanual serie original', -1.744),
-                              ('202608', 'Var % mensual serie desestacionalizada', 0.066),
-                              ('202607', 'Var % interanual serie original', 2.0))
-        t(periodo, tipo_de_indicador_descripcion, valor)""")
-    con.execute("""CREATE TABLE indice_salarios AS
-        SELECT * FROM (VALUES ('202608', '0', 'v_m', 2.73), ('202608', '0', 'v_ia', 35.61),
-                              ('202608', '100', 'v_m', 9.9))
-        t(periodo, codigo, tipo_de_indicador, valor)""")
-    con.execute("""CREATE TABLE valorizacion_canastas_cba_cbt AS
-        SELECT * FROM (VALUES
-            ('202609', 'Canasta Basica Alimentaria', 'CBA', 239058.22),
-            ('202609', 'Canasta Basica Total', 'CBT', 528318.67),
-            ('202609', 'Canasta Basica Total', 'v_ia', 38.7),
-            ('202609', 'Canasta Basica Total, Hogar 2', 'Hogar 2', 1632504.69))
-        t(periodo, descripcion, tipo_de_indicador, valor)""")
+    def months(first: str, last: str) -> list[str]:
+        return [f"{y}{m:02d}" for y in range(2024, 2027) for m in range(1, 13) if first <= f"{y}{m:02d}" <= last]
+
+    # EMAE: monthly to 2026-08 (one month behind IPC, like the real data).
+    con.execute("""CREATE TABLE estimador_mensual_de_actividad_economica_nivel_general (
+        periodo VARCHAR, tipo_de_indicador_descripcion VARCHAR, valor DOUBLE, observaciones VARCHAR)""")
+    emae = []
+    for i, per in enumerate(months("202501", "202608")):
+        last = per == "202608"
+        emae += [
+            (per, "Índice serie desestacionalizada", 150.0 + i, None),
+            (per, "Var % mensual serie desestacionalizada", 0.066 if last else 0.5, None),
+            (per, "Var % interanual serie original", -1.744 if last else 2.0, None),
+        ]
+    con.executemany("INSERT INTO estimador_mensual_de_actividad_economica_nivel_general VALUES (?,?,?,?)", emae)
+
+    # Wages: monthly to 2026-08. Code 121 has no index level, like the real public subsectors.
+    con.execute("""CREATE TABLE indice_salarios (periodo VARCHAR, codigo VARCHAR, descripcion VARCHAR,
+        tipo_de_indicador VARCHAR, valor DOUBLE, observaciones VARCHAR)""")
+    sal = []
+    for i, per in enumerate(months("202501", "202608")):
+        last = per == "202608"
+        sal += [
+            (per, "0", "Nivel general", "Indice", 2000.0 + 40 * i, None),
+            (per, "0", "Nivel general", "v_m", 2.73 if last else 2.0, None),
+            (per, "0", "Nivel general", "v_ia", 35.61 if last else 30.0, None),
+            (per, "100", "Total registrado", "Indice", 2000.0 + 20 * i, None),
+            (per, "100", "Total registrado", "v_m", 9.9 if last else 1.0, None),
+            (per, "121", "Subsector público nacional", "v_m", 1.5, None),
+        ]
+    con.executemany("INSERT INTO indice_salarios VALUES (?,?,?,?,?,?)", sal)
+
+    # Baskets (GBA): monthly to 2026-09.
+    con.execute("""CREATE TABLE valorizacion_canastas_cba_cbt (periodo VARCHAR, descripcion VARCHAR,
+        tipo_de_indicador VARCHAR, valor DOUBLE)""")
+    can = []
+    for i, per in enumerate(months("202501", "202609")):
+        last = per == "202609"
+        can += [
+            (per, "Canasta Basica Total", "CBT", 528318.67 if last else 400000.0 + 5000 * i),
+            (per, "Canasta Basica Total", "v_m", 1.7),
+            (per, "Canasta Basica Total", "v_ia", 38.7 if last else 35.0),
+            (per, "Canasta Basica Alimentaria", "CBA", 239058.22 if last else 180000.0 + 2000 * i),
+        ]
+    can.append(("202609", "Canasta Basica Total, Hogar 2", "Hogar 2", 1632504.69))
+    con.executemany("INSERT INTO valorizacion_canastas_cba_cbt VALUES (?,?,?,?)", can)
     con.execute("""CREATE TABLE pobreza_eph AS
         SELECT * FROM (VALUES ('T_31_A', '20261S', 24.4, 32.3, 7.5, 'Dato provisorio', CAST(NULL AS VARCHAR)),
                               ('T_31_A', '20252S', 21.0, 28.2, 6.3, NULL, NULL))

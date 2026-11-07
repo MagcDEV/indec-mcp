@@ -25,12 +25,13 @@ In Claude.ai, ChatGPT, Cursor and similar clients, add a custom connector or rem
 
 ## MCP server
 
-The server has five read-only tools:
+The server has six read-only tools:
 
 | Tool | Use it for |
 |---|---|
 | `latest_indicators` | Headline figures, each with its period: CPI (general and core), EMAE, wages, CBA/CBT, poverty, unemployment |
 | `inflation_series` | A CPI series by category (general, core, regulated, divisions…) and region, with monthly, year-on-year and year-to-date changes, the index, or incidence |
+| `compare_series` | Two to four monthly series side by side, aligned on their shared months: wages vs CPI (real wages), basic basket vs wages, CPI by region, EMAE. Shows INDEC's published changes, plus a cumulative summary that is marked as computed |
 | `list_datasets` | What's in the mirror, with its freshness |
 | `describe_dataset` | Columns, their meaning, the **exact values** of each text dimension (filters are case-sensitive) and sample rows |
 | `query_sql` | Read-only DuckDB SQL for everything else |
@@ -56,7 +57,7 @@ echo 'INDEC_TOKEN=...' > .env                                # git ignores this 
 
 .venv/bin/indec-sync                       # full refresh -> data/indec.duckdb (about 15 min, about 2,000 requests)
 .venv/bin/indec-sync --only ipc_nacional   # refresh just one dataset; the rest are carried over
-.venv/bin/python -m pytest                 # 40 tests: fake PostgREST server and fixture DB, no network
+.venv/bin/python -m pytest                 # 78 tests: fake PostgREST server and fixture DB, no network
 ```
 
 How it works:
