@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e '.[dev]'
+      - run: python -m pytest -q
+      - name: Validate server.json against the MCP Registry schema
+        run: |
+          pip install jsonschema
+          curl -fsSL "$(python -c 'import json;print(json.load(open("server.json"))["$schema"])')" -o /tmp/schema.json
+          python -c 'import json,jsonschema; jsonschema.validate(json.load(open("server.json")), json.load(open("/tmp/schema.json"))); print("server.json OK")'

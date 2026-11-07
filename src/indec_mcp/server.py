@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
-from mcp_types import ToolAnnotations
+from mcp_types import Icon, ToolAnnotations
 from pydantic import Field
 
 from . import topics
@@ -46,6 +46,10 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Períodos: 'AAAAMM' mensual, 'AAAA1S' semestral, 'AAAA1T' trimestral.
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
+
+VERSION = "0.2.0"
+REPO_URL = "https://github.com/MagcDEV/indec-mcp"
+ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, idempotent_hint=True, open_world_hint=False)
 
@@ -82,11 +86,14 @@ def create_server(mirror: Mirror) -> MCPServer:
     server = MCPServer(
         name="indec",
         title="INDEC Argentina (no oficial)",
+        description="Estadísticas oficiales del INDEC (Argentina): inflación, salarios, pobreza, comercio, población.",
         instructions=INSTRUCTIONS,
-        version="0.1.0",
+        website_url=REPO_URL,
+        icons=[Icon(src=ICON_URL, mime_type="image/png", sizes=["512x512"])],
+        version=VERSION,
     )
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Últimos indicadores del INDEC", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def latest_indicators() -> dict[str, Any]:
@@ -95,7 +102,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         indigencia, desocupación y empleo. Usala primero para preguntas generales."""
         return mirror.snapshot()
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Serie de inflación (IPC)", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def inflation_series(
@@ -118,7 +125,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         2016: variación mensual, interanual, acumulada, índice o incidencias, por categoría y región."""
         return mirror.ipc_series(category, region, measures, start, end)
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Comparar series (salario real, canasta, regiones)", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def compare_series(
@@ -142,7 +149,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         2 series, la variación relativa (ej. salario real). El resumen es CALCULADO: decilo al usarlo."""
         return mirror.compare(series, measure, start, end)
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Comercio exterior (exportaciones e importaciones)", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def foreign_trade(
@@ -166,7 +173,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         (secreto estadístico) y el resultado informa cuántas son: mencionalo al citar montos."""
         return topics.foreign_trade(mirror, flow, country, category, start, end, group_by, top)
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Buscar códigos de comercio exterior", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def trade_codes(
@@ -176,7 +183,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         y grandes categorías económicas). Ignora mayúsculas y acentos."""
         return topics.trade_codes(mirror, query)
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Población (país, provincia, departamento)", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def population(
@@ -195,7 +202,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         o un departamento, con apertura por sexo, grupos de edad o departamentos."""
         return topics.population(mirror, place, year, by)
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Listar datasets", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def list_datasets() -> list[dict[str, Any]]:
@@ -203,7 +210,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         de sincronización)."""
         return mirror.datasets()
 
-    @server.tool(annotations=READ_ONLY)
+    @server.tool(title="Describir un dataset", annotations=READ_ONLY)
     @_tool_errors
     @cached
     def describe_dataset(
@@ -221,7 +228,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         "texto ('202609')."
     )
 
-    @server.tool(annotations=READ_ONLY, description=query_doc)
+    @server.tool(title="Consulta SQL de solo lectura", annotations=READ_ONLY, description=query_doc)
     @_tool_errors
     @cached
     def query_sql(

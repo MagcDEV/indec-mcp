@@ -1,3 +1,5 @@
+<img src="docs/img/icon.png" alt="" width="72" align="right">
+
 # INDEC en tu asistente de IA
 
 **Preguntale a Claude, ChatGPT o Cursor por la inflación, los salarios, la pobreza, las exportaciones o la población de Argentina, y te responde con los datos oficiales del INDEC.**
@@ -171,7 +173,7 @@ Una pregunta normal usa pocas consultas, entre 2 y 10. Si llegás al límite, el
 - la app que usás (por ejemplo, "claude-code");
 - qué herramienta se usó y el tema general de la consulta (por ejemplo, "IPC Núcleo@GBA" o "China").
 
-Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni tu conversación. La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas.
+Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni tu conversación. La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas. Política completa: [PRIVACY.md](PRIVACY.md).
 
 **¿Cuesta algo?** El servidor es gratis. Lo que uses de tu asistente de IA depende de tu plan con ese servicio.
 
@@ -185,6 +187,8 @@ Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni t
 - [docs/deploy.md](docs/deploy.md): despliegue, configuración, protección contra abuso y operación
 - [docs/api-research.md](docs/api-research.md): cómo funciona la API del INDEC, con mediciones reales
 - [docs/datasets.md](docs/datasets.md): los 19 datasets con sus columnas
+- [docs/submissions.md](docs/submissions.md): material para publicar en directorios de MCP
+- [PRIVACY.md](PRIVACY.md): política de privacidad
 
 ## Créditos
 

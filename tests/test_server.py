@@ -50,3 +50,10 @@ def test_prompts_and_resources_are_exposed(server):
     assert "secreto estadístico" in guide
     schema = run(server.read_resource("indec://dataset/pobreza_eph"))[0].content
     assert "area_geografica_nom" in schema
+
+
+def test_every_tool_has_a_title_and_read_only_annotation_for_directory_review(server):
+    # Anthropic's Connectors Directory rejects tools without a title and readOnlyHint/destructiveHint.
+    for t in run(server.list_tools()):
+        assert t.title, t.name
+        assert t.annotations.read_only_hint is True and t.annotations.destructive_hint is False, t.name
