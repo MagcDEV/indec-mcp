@@ -17,6 +17,7 @@ dev = ["pytest>=8"]
 indec-sync = "indec_mcp.sync:main"
 indec-mcp = "indec_mcp.server:main"
 indec-mcp-http = "indec_mcp.hosted:main"
+indec-stats = "indec_mcp.stats_cli:main"
 
 [build-system]
 requires = ["hatchling"]

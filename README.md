@@ -164,7 +164,14 @@ Una pregunta normal usa pocas consultas, entre 2 y 10. Si llegás al límite, el
 
 **¿Es oficial?** No. Es un proyecto independiente que usa la API pública del INDEC. Ante cualquier duda, la referencia es [indec.gob.ar](https://www.indec.gob.ar).
 
-**¿Ven mis conversaciones?** No. El servidor solo recibe las consultas de datos que hace el asistente (por ejemplo, "IPC de Alimentos desde 2025"), no tu chat. El programa no guarda registros de acceso con direcciones IP: para los límites de uso solo registra un resumen cifrado (hash). La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas.
+**¿Ven mis conversaciones?** No. El servidor solo recibe las consultas de datos que hace el asistente (por ejemplo, "IPC de Alimentos desde 2025"), no tu chat.
+
+**¿Qué guarda el servidor?** Para saber cuánta gente lo usa, guarda **estadísticas anónimas durante 90 días**:
+- un identificador cifrado de tu conexión (nunca la dirección IP);
+- la app que usás (por ejemplo, "claude-code");
+- qué herramienta se usó y el tema general de la consulta (por ejemplo, "IPC Núcleo@GBA" o "China").
+
+Nunca guarda el texto de tus consultas SQL (solo los nombres de las tablas) ni tu conversación. La plataforma de hosting (Railway) puede tener sus propios registros de red. Tu conversación la procesa tu aplicación de IA (Claude, ChatGPT…) según sus propias políticas.
 
 **¿Cuesta algo?** El servidor es gratis. Lo que uses de tu asistente de IA depende de tu plan con ese servicio.
 

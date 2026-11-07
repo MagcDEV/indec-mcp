@@ -12,6 +12,7 @@ No LLM runs here (clients bring their own), so cost per request is CPU only.
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from .mirror import SOURCE, Limits, Mirror, QueryError
 from .ratelimit import RateLimiter, RateLimitMiddleware, Rule
 from .scheduler import SyncScheduler
 from .server import create_server
+from .usage import UsageMiddleware, UsageRecorder
 
 log = logging.getLogger("indec_mcp.http")
 
@@ -53,6 +55,13 @@ class Settings:
     max_connections: int = 64
     sync_enabled: bool = True
     sync_hour_utc: int = 22
+    usage_enabled: bool = True
+    usage_retention_days: int = 90
+    stats_token: str | None = None  # enables GET /stats; unset -> 404
+
+    @property
+    def usage_db(self) -> Path:
+        return self.db_path.parent / "usage.sqlite"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -70,6 +79,9 @@ class Settings:
             max_connections=int(os.environ.get("MAX_CONNECTIONS", cls.max_connections)),
             sync_enabled=os.environ.get("SYNC_ENABLED", "1") != "0",
             sync_hour_utc=int(os.environ.get("SYNC_HOUR_UTC", cls.sync_hour_utc)),
+            usage_enabled=os.environ.get("USAGE_ENABLED", "1") != "0",
+            usage_retention_days=int(os.environ.get("USAGE_RETENTION_DAYS", cls.usage_retention_days)),
+            stats_token=os.environ.get("STATS_TOKEN") or None,
         )
 
     def limiter(self) -> RateLimiter:
@@ -83,8 +95,27 @@ class Settings:
         )
 
 
-def build_app(mirror: Mirror, settings: Settings, scheduler: SyncScheduler | None = None):
+def build_app(
+    mirror: Mirror,
+    settings: Settings,
+    scheduler: SyncScheduler | None = None,
+    usage: UsageRecorder | None = None,
+):
     server = create_server(mirror)
+
+    @server.custom_route("/stats", methods=["GET"], include_in_schema=False)
+    async def stats(request: Request) -> JSONResponse:
+        # Hidden unless STATS_TOKEN is configured; constant-time token check.
+        given = request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+        if not settings.stats_token or usage is None:
+            return JSONResponse({"error": "not found"}, status_code=404)
+        if not hmac.compare_digest(given.encode(), settings.stats_token.encode()):
+            return JSONResponse({"error": "unauthorized"}, status_code=401)
+        try:
+            days = int(request.query_params.get("days", 30))
+        except ValueError:
+            days = 30
+        return JSONResponse(usage.report(days))
 
     @server.custom_route("/healthz", methods=["GET"], include_in_schema=False)
     async def healthz(request: Request) -> JSONResponse:
@@ -131,9 +162,13 @@ def build_app(mirror: Mirror, settings: Settings, scheduler: SyncScheduler | Non
         transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False),
         host="0.0.0.0",
     )
-    return RateLimitMiddleware(
+    app = RateLimitMiddleware(
         app, settings.limiter(), path_prefix="/mcp", proxy_hops=settings.proxy_hops, ip_header=settings.ip_header
     )
+    if usage is not None:  # outermost, so rate-limited (429) requests are counted too
+        app = UsageMiddleware(app, usage, path_prefix="/mcp", proxy_hops=settings.proxy_hops,
+                              ip_header=settings.ip_header)
+    return app
 
 
 def main() -> None:
@@ -154,8 +189,14 @@ def main() -> None:
     else:
         log.warning("daily sync disabled (SYNC_ENABLED=0 or INDEC_TOKEN missing); serving existing mirror")
 
+    usage = None
+    if settings.usage_enabled:
+        usage = UsageRecorder(settings.usage_db, retention_days=settings.usage_retention_days)
+        log.info("usage analytics on (%s, %sd retention, /stats %s)", settings.usage_db.name,
+                 settings.usage_retention_days, "enabled" if settings.stats_token else "disabled")
+
     uvicorn.run(
-        build_app(mirror, settings, scheduler),
+        build_app(mirror, settings, scheduler, usage),
         host="0.0.0.0",
         port=settings.port,
         proxy_headers=False,  # we read X-Forwarded-For ourselves, counting trusted hops

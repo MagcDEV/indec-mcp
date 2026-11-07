@@ -18,6 +18,8 @@ Production: **https://indec-mcp-production.up.railway.app/mcp** (Streamable HTTP
 | `RATE_GLOBAL_PER_SECOND` / `RATE_GLOBAL_BURST` | 20 / 100 | Total for the whole instance |
 | `MAX_CONNECTIONS` | 64 | uvicorn returns 503 beyond this |
 | `SYNC_ENABLED` / `SYNC_HOUR_UTC` | 1 / 22 | Daily sync at 22:00 UTC (19:00 ART) |
+| `STATS_TOKEN` | — | **Secret.** Enables `GET /stats` (Bearer token). Without it, `/stats` returns 404. |
+| `USAGE_ENABLED` / `USAGE_RETENTION_DAYS` | 1 / 90 | Anonymous usage analytics (see below) |
 
 Railway's legacy config-as-code (`railway.toml`) is not used: new services can't opt into it, and it stops being read on 2026-12-01. Settings live on the service itself. They could be moved to Railway IaC (`.railway/railway.py`) later.
 
@@ -50,6 +52,31 @@ Railway documents `X-Real-IP` as the client-IP header ([specs & limits](https://
 | 429 response | Has `Retry-After` and a JSON-RPC error body |
 
 Re-run this check if a CDN or another proxy is ever put in front of the service.
+
+## Usage analytics
+
+The server records one row per MCP request in `/data/usage.sqlite`, on the same volume as the mirror. Rows older than `USAGE_RETENTION_DAYS` are deleted.
+
+| Stored | Not stored |
+|---|---|
+| `user`: HMAC-SHA256 of the client IP with a secret salt (kept in `/data/usage.salt`), truncated to 16 hex characters | The IP address itself |
+| `client`: the client's self-reported `clientInfo.name` (or the User-Agent product token) | Conversations or prompts |
+| `method`, `tool`, `status`, `is_error`, `ms` | SQL text (only the referenced table names) |
+| `detail`: a coarse topic built from structured arguments (for example `Núcleo@GBA` or `exportaciones\|China\|anio`) | Free text, except `trade_codes` queries (clipped to 30 characters) |
+
+Writes are batched by a background thread, so requests never wait on disk. Rate-limited (429) requests are recorded too, because the usage middleware sits outside the rate limiter.
+
+To read the report:
+
+```bash
+indec-stats                 # pretty report for the last 30 days (STATS_TOKEN from env or .env)
+indec-stats --days 7 --json # raw JSON
+curl -H "Authorization: Bearer $STATS_TOKEN" https://indec-mcp-production.up.railway.app/stats?days=30
+```
+
+It shows users today, over 7 days and over 30 days, new vs. returning users, a daily breakdown, clients (apps), tools (calls, users, error %, latency), the top topics, and 429s.
+
+**What "users" means:** distinct client IPs, after hashing. Several people behind one network (an office, a mobile carrier's NAT) count as one, and one person whose IP changes counts as several. Treat the number as an estimate. Losing `usage.salt` resets every user ID.
 
 ## Routine operations
 
