@@ -92,8 +92,9 @@ def test_users_count_only_direct_clients_and_providers_are_reported_apart(hosted
     assert r["via_providers"] == [{"via": "anthropic", "requests": 3, "tool_calls": 0, "active_days": 1,
                                    "rate_limited": 0}]
     assert r["daily"][-1]["via_provider"] == 3
-    claude = next(x for x in r["clients"] if x["client"] == "Anthropic/ClaudeAI")
-    assert claude == {"client": "Anthropic/ClaudeAI", "via": "anthropic", "users": 0, "requests": 3}
+    # The UA fallback keeps the product token ("Anthropic"); real Claude.ai sends clientInfo.name.
+    claude = next(x for x in r["clients"] if x["client"] == "Anthropic")
+    assert claude == {"client": "Anthropic", "via": "anthropic", "users": 0, "requests": 3}
 
 
 def test_v1_usage_tables_are_migrated_and_backfilled(tmp_path):
