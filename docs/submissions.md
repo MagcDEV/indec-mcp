@@ -15,7 +15,8 @@ Everything needed to list the hosted server. Prepared 2026-11-07, from each dire
 
 | Directory | Status |
 |---|---|
-| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp`, **v0.4.4 is the latest version**, active |
+| Official MCP Registry | ✅ **Published**: `io.github.MagcDEV/indec-mcp`, **v0.5.0 is the latest version**, active, with the hosted remote and the PyPI package |
+| PyPI | ✅ **Published**: [`indec-mcp`](https://pypi.org/project/indec-mcp/) v0.5.0 (`uvx indec-mcp`), via trusted publishing on each GitHub release |
 | Anthropic Connectors Directory | ⏳ **In review**: submitted through the portal as "INDEC Argentina (no oficial)", slug `indec-argentina` |
 | Glama | ✅ Server and connector listed, both **rated A** |
 | awesome-mcp-servers | ⏳ [PR #18854](https://github.com/punkpeye/awesome-mcp-servers/pull/18854): Glama server badge added, waiting for maintainers |
@@ -49,7 +50,7 @@ curl -fsSL https://github.com/modelcontextprotocol/registry/releases/download/v1
 curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.MagcDEV/indec-mcp"   # verify
 ```
 
-To publish a new version later, bump `version` in `server.json` and `pyproject.toml`, then run `publish` again.
+To publish a new version later: bump `version` in `pyproject.toml`, `server.py` (`VERSION`) and `server.json` (both `version` fields), push, create a GitHub release `vX.Y.Z` (the `publish.yml` workflow uploads it to PyPI), then run `login github` and `publish` again. The registry checks that the PyPI README contains `mcp-name: io.github.MagcDEV/indec-mcp`.
 
 ## 2. Anthropic Connectors Directory
 
