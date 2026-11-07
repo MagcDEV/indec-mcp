@@ -4,3 +4,7 @@
 data/
 __pycache__/
 node_modules/
+.venv/
+*.egg-info/
+.pytest_cache/
+*.duckdb.tmp
