@@ -51,7 +51,7 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
 
-VERSION = "0.4.3"
+VERSION = "0.4.4"
 REPO_URL = "https://github.com/MagcDEV/indec-mcp"
 ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
 
@@ -407,8 +407,8 @@ def create_server(mirror: Mirror) -> MCPServer:
         table: Annotated[str, Field(description="Nombre de la tabla SQL del dataset, ej. 'ipc_nacional'.")],
     ) -> dict[str, Any]:
         """Esquema de un dataset: descripción, clave primaria, columnas con tipo y significado, los
-        valores exactos de cada dimensión de texto (usalos tal cual en filtros SQL: distinguen
-        mayúsculas) y filas de ejemplo."""
+        valores exactos de cada dimensión de texto (los filtros SQL distinguen mayúsculas) y filas
+        de ejemplo."""
         return mirror.describe(table)
 
     query_doc = (

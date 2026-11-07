@@ -67,7 +67,7 @@ def test_tool_descriptions_are_purely_descriptive(server):
     # Behavioral guidance lives in the server-level `instructions` instead.
     import re
 
-    imperative = re.compile(r"\b(Usala|decilo|mencionalo|Mencioná|Llamala|usá|Usá|pasá|Agregá|Preferí|Probá|Indicá|aclaralo)\b")
+    imperative = re.compile(r"\b(Usala|usalos|Usalos|decilo|mencionalo|Mencioná|Llamala|usá|Usá|pasá|Agregá|Preferí|Probá|Indicá|aclaralo)\b")
     tools = run(server.list_tools())
     names = {t.name for t in tools}
     for t in tools:
