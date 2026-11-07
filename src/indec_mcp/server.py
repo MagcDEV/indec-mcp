@@ -51,7 +51,7 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
 
-VERSION = "0.4.2"
+VERSION = "0.4.3"
 REPO_URL = "https://github.com/MagcDEV/indec-mcp"
 ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
 
