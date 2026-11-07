@@ -8,8 +8,33 @@ An AI and tooling layer over the official **[Catálogo API-INDEC](https://api.in
 
 - ✅ Research ([docs/api-research.md](docs/api-research.md))
 - ✅ **Sync job**: mirrors all 19 datasets (about 2 M rows) into one DuckDB file
-- ⏳ Local MCP server (stdio) over the mirror
+- ✅ **Local MCP server** (stdio) over the mirror, tested end to end with Claude Code
 - ⏳ Hosted MCP on Railway with rate limits
+
+## MCP server
+
+The server has five read-only tools:
+
+| Tool | Use it for |
+|---|---|
+| `latest_indicators` | Headline figures, each with its period: CPI (general and core), EMAE, wages, CBA/CBT, poverty, unemployment |
+| `inflation_series` | A CPI series by category (general, core, regulated, divisions…) and region, with monthly, year-on-year and year-to-date changes, the index, or incidence |
+| `list_datasets` | What's in the mirror, with its freshness |
+| `describe_dataset` | Columns, their meaning, the **exact values** of each text dimension (filters are case-sensitive) and sample rows |
+| `query_sql` | Read-only DuckDB SQL for everything else |
+
+The server's instructions tell the model to cite "Fuente: INDEC" with the period of each figure, to flag provisional data, to prefer INDEC's published changes over computing its own, and to say when it has computed something.
+
+**`query_sql` sandbox:**
+- The database is opened read-only.
+- `enable_external_access=false` means no file access, network access, `ATTACH` or extension installs.
+- The configuration is locked, so a query can't turn those settings back on.
+- Each call accepts one SELECT statement, runs for at most 5 s and returns at most 500 rows.
+- Tests cover `DROP`, `INSERT`, `COPY TO`, `read_csv('/etc/passwd')`, URLs and runaway joins.
+
+**Use it from Claude Code.** `.mcp.json` registers the server for this project. Start `claude` in this folder and approve the `indec` server when asked. Then ask things like *"¿Cómo viene la inflación de alimentos en el NOA vs. GBA este año?"*
+
+For other MCP clients, run `.venv/bin/indec-mcp`. It speaks stdio and reads `INDEC_DB`, which defaults to `data/indec.duckdb`.
 
 ## Sync
 
@@ -19,7 +44,7 @@ echo 'INDEC_TOKEN=...' > .env                                # git ignores this 
 
 .venv/bin/indec-sync                       # full refresh -> data/indec.duckdb (about 15 min, about 2,000 requests)
 .venv/bin/indec-sync --only ipc_nacional   # refresh just one dataset; the rest are carried over
-.venv/bin/python -m pytest                 # tests use a fake PostgREST server, no network
+.venv/bin/python -m pytest                 # 40 tests: fake PostgREST server and fixture DB, no network
 ```
 
 How it works:

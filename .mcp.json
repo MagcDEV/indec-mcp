@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "indec": {
+      "type": "stdio",
+      "command": ".venv/bin/indec-mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

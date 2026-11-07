@@ -1,0 +1,169 @@
+import os
+import shutil
+
+import pytest
+
+from indec_mcp.mirror import Limits, Mirror, QueryError, format_period, parse_period
+
+from .fixture_db import build
+
+
+@pytest.fixture
+def mirror(tmp_path):
+    m = Mirror(build(tmp_path / "indec.duckdb"), Limits(max_rows=50, timeout_s=0.5))
+    yield m
+    m.close()
+
+
+# -- query_sql sandbox ------------------------------------------------------------------------
+
+
+def test_select_works_and_reports_source(mirror):
+    res = mirror.query("SELECT count(*) AS n FROM pobreza_eph;")
+    assert res["columns"] == ["n"] and res["rows"] == [[2]]
+    assert "INDEC" in res["source"]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "DROP TABLE ipc_nacional",
+        "INSERT INTO pobreza_eph SELECT * FROM pobreza_eph",
+        "SELECT 1; SELECT 2",
+        "PRAGMA version",
+        "SET enable_external_access = true",
+        "ATTACH '/tmp/other.duckdb'",
+        "COPY (SELECT 1) TO '/tmp/out.csv'",
+    ],
+)
+def test_non_select_and_multi_statements_are_rejected(mirror, sql):
+    with pytest.raises(QueryError):
+        mirror.query(sql)
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "SELECT * FROM read_csv('/etc/passwd')",
+        "SELECT * FROM '/etc/hostname'",
+        "SELECT * FROM read_json('https://example.com/x.json')",
+    ],
+)
+def test_file_and_network_access_is_blocked_inside_select(mirror, sql):
+    with pytest.raises(QueryError, match="(?i)permission|access|does not exist"):
+        mirror.query(sql)
+
+
+def test_rows_are_capped_and_flagged(mirror):
+    res = mirror.query("SELECT * FROM range(1000)")
+    assert res["row_count"] == 50 and res["truncated"] is True
+    assert "truncado" in res["note"]
+
+
+def test_slow_queries_are_interrupted(mirror):
+    with pytest.raises(QueryError, match="límite"):
+        mirror.query("SELECT sum(a.range * b.range) FROM range(100000000) a, range(100000) b")
+    # The connection is still usable afterwards.
+    assert mirror.query("SELECT 42")["rows"] == [[42]]
+
+
+def test_reopens_after_the_file_is_atomically_replaced(mirror, tmp_path):
+    assert mirror.query("SELECT count(*) FROM pobreza_eph")["rows"] == [[2]]
+    new = build(tmp_path / "new.duckdb")
+    import duckdb
+
+    con = duckdb.connect(str(new))
+    con.execute("DELETE FROM pobreza_eph WHERE periodo = '20252S'")
+    con.close()
+    os.replace(new, mirror.db_path)
+    assert mirror.query("SELECT count(*) FROM pobreza_eph")["rows"] == [[1]]
+
+
+def test_missing_mirror_gives_a_clear_error(tmp_path):
+    with pytest.raises(QueryError, match="indec-sync"):
+        Mirror(tmp_path / "nope.duckdb").datasets()
+
+
+# -- catalog ----------------------------------------------------------------------------------
+
+
+def test_describe_lists_exact_dimension_values_and_hides_null_siblings(mirror):
+    d = mirror.describe("pobreza_eph")
+    cols = {c["column_name"]: c for c in d["columns"]}
+    assert "tasa_pobreza_personas_null" not in cols
+    assert cols["area_geografica_nom"]["values"] == ["T_31_A"]
+    assert "values" not in cols["periodo"]
+    assert d["latest_period"] == "2026 S1"
+    assert "tasa_pobreza_personas_null" not in d["sample_rows"]["columns"]
+
+
+def test_unknown_dataset_lists_alternatives(mirror):
+    with pytest.raises(QueryError, match="ipc_nacional"):
+        mirror.describe("inflacion")
+
+
+# -- inflation_series -------------------------------------------------------------------------
+
+
+def test_ipc_series_pivots_measures_and_defaults_to_last_13_months(mirror):
+    s = mirror.ipc_series()
+    assert s["category"] == "Nivel general" and s["region"] == "Nacional"
+    periods = [r["periodo"] for r in s["rows"]]
+    assert periods[0] == "2025-09" and periods[-1] == "2026-09" and len(periods) == 13
+    last = s["rows"][-1]
+    assert set(last) == {"periodo", "v_m", "v_ia", "observaciones"}
+    assert last["observaciones"] == "Dato provisorio"
+
+
+def test_ipc_series_respects_range_and_measures(mirror):
+    s = mirror.ipc_series("núcleo", measures=["Indice"], start="2025-01", end="2025/03")
+    assert [r["periodo"] for r in s["rows"]] == ["2025-01", "2025-02", "2025-03"]
+    assert set(s["rows"][0]) == {"periodo", "Indice", "observaciones"}
+
+
+def test_ipc_category_resolution_is_region_aware(mirror):
+    # Nacional has no Grupo detail, so 'alimentos' must resolve to the División.
+    assert mirror.ipc_series("alimentos")["level"] == "División"
+    assert mirror.ipc_series("alimentos", region="gba")["level"] == "Grupo"
+
+
+def test_ipc_ambiguous_and_unknown_categories_explain_options(mirror):
+    with pytest.raises(QueryError, match="ambiguo.*Opciones"):
+        mirror.ipc_series("bienes y", region="GBA")
+    with pytest.raises(QueryError, match="Disponibles: .*Nivel general"):
+        mirror.ipc_series("zzz")
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [({"region": "Mendoza"}, "Región inválida"), ({"measures": ["yoy"]}, "Medidas inválidas"),
+     ({"start": "sept 2025"}, "Período inválido")],
+)
+def test_ipc_validates_inputs(mirror, kwargs, match):
+    with pytest.raises(QueryError, match=match):
+        mirror.ipc_series(**kwargs)
+
+
+# -- snapshot ---------------------------------------------------------------------------------
+
+
+def test_snapshot_has_headline_figures_with_periods_and_flags(mirror):
+    s = mirror.snapshot()
+    assert s["inflacion_ipc_nacional"]["periodo"] == "2026-09"
+    assert s["actividad_emae"] == {"periodo": "2026-08", "interanual_pct": -1.7, "mensual_desestacionalizada_pct": 0.1}
+    assert s["salarios_nivel_general"]["interanual_pct"] == 35.61
+    assert s["canastas_gba"]["cbt_hogar_tipo_2_ars"] == 1632504.69
+    assert s["pobreza_31_aglomerados"]["observaciones"] == "Dato provisorio"
+    assert s["mercado_de_trabajo_31_aglomerados"]["desocupacion_pct"] == 7.9
+    assert s["synced_at"].startswith("2026-11-07")
+
+
+# -- helpers ----------------------------------------------------------------------------------
+
+
+def test_period_formatting_round_trips():
+    assert format_period("202609") == "2026-09"
+    assert format_period("20261S") == "2026 S1"
+    assert format_period("20262T") == "2026 T2"
+    assert parse_period("2026-9") == "202609"
+    assert parse_period(None) is None
