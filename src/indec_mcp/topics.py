@@ -47,7 +47,7 @@ GROUPS = ("mes", "anio", "pais", "categoria", "subcategoria")
 CONFIDENTIAL_NOTE = (
     "Las sumas son CALCULADAS por este servicio y EXCLUYEN las filas con secreto estadístico "
     "('s', valor no publicado a este nivel de detalle). Los totales oficiales del INDEC sí las "
-    "incluyen, así que pueden ser mayores. Mencioná esta salvedad al citar montos."
+    "incluyen, así que pueden ser mayores."
 )
 
 _NORM = "lower(strip_accents({}))"

@@ -51,7 +51,7 @@ INDEC advierte diferencias por redondeo. Si calculás algo (ej. salario real), d
 - Este servicio no es oficial ni está afiliado al INDEC.
 """
 
-VERSION = "0.4.1"
+VERSION = "0.4.2"
 REPO_URL = "https://github.com/MagcDEV/indec-mcp"
 ICON_URL = "https://raw.githubusercontent.com/MagcDEV/indec-mcp/main/docs/img/icon.png"
 
@@ -116,7 +116,7 @@ def create_server(mirror: Mirror) -> MCPServer:
     def latest_indicators() -> dict[str, Any]:
         """Últimas cifras de titular del INDEC, cada una con su período: inflación (IPC nacional,
         general y núcleo), actividad (EMAE), salarios, canastas básicas CBA/CBT, pobreza e
-        indigencia, desocupación y empleo. Usala primero para preguntas generales."""
+        indigencia, desocupación y empleo."""
         return mirror.snapshot()
 
     @server.tool(title="Serie de inflación (IPC)", annotations=read_only("Serie de inflación (IPC)"))
@@ -165,7 +165,8 @@ def create_server(mirror: Mirror) -> MCPServer:
         """Compara series mensuales en los meses que tienen en común: salarios vs inflación (salario
         real), canasta básica vs salarios, IPC por región o categoría, actividad vs precios. Devuelve
         la tabla y un resumen con la variación entre el primer y el último mes de cada serie y, con
-        2 series, la variación relativa (ej. salario real). El resumen es CALCULADO: decilo al usarlo."""
+        2 series, la variación relativa (ej. salario real). El resumen es un cálculo del servicio, no una cifra
+        oficial del INDEC."""
         return mirror.compare(series, measure, start, end)
 
     @server.tool(title="Comercio exterior (exportaciones e importaciones)", annotations=read_only("Comercio exterior (exportaciones e importaciones)"))
@@ -189,7 +190,7 @@ def create_server(mirror: Mirror) -> MCPServer:
     ) -> dict[str, Any]:
         """Comercio exterior de bienes desde 1986: millones de USD y toneladas, agrupado por mes, año,
         país o categoría, con nombres en lugar de códigos. Las sumas excluyen las filas confidenciales
-        (secreto estadístico) y el resultado informa cuántas son: mencionalo al citar montos."""
+        (secreto estadístico); el resultado informa cuántas son."""
         return topics.foreign_trade(mirror, flow, country, category, start, end, group_by, top)
 
     @server.tool(title="Buscar códigos de comercio exterior", annotations=read_only("Buscar códigos de comercio exterior"))
@@ -239,7 +240,7 @@ def create_server(mirror: Mirror) -> MCPServer:
         end: EndPeriod = None,
     ) -> dict[str, Any]:
         """Evolución de los salarios por sector (índice de salarios, desde oct-2015): variaciones mensual,
-        interanual y acumulada publicadas por el INDEC. Para compararlos con la inflación usá compare_series."""
+        interanual y acumulada publicadas por el INDEC."""
         code = mirror._resolve_wage_code(sector or "nivel general")
         return indices.series(mirror, "SALARIOS", code, measures, start, end)
 
@@ -323,7 +324,7 @@ def create_server(mirror: Mirror) -> MCPServer:
             str | None,
             Field(description="Vacío = nivel general. Origen: 'Productos nacionales' (N) / importados (I). Sector "
                   "o rubro CIIU, ej. 'Productos agropecuarios', 'Productos manufacturados', 'Energía eléctrica', "
-                  "'Cereales y oleaginosas'. Si es ambiguo, pasá el código."),
+                  "'Cereales y oleaginosas'. También acepta el código de la categoría."),
         ] = None,
         measures: Annotated[
             list[str] | None,
@@ -403,17 +404,17 @@ def create_server(mirror: Mirror) -> MCPServer:
     @_tool_errors
     @cached
     def describe_dataset(
-        table: Annotated[str, Field(description="Nombre de tabla de `list_datasets`, ej. 'ipc_nacional'.")],
+        table: Annotated[str, Field(description="Nombre de la tabla SQL del dataset, ej. 'ipc_nacional'.")],
     ) -> dict[str, Any]:
         """Esquema de un dataset: descripción, clave primaria, columnas con tipo y significado, los
         valores exactos de cada dimensión de texto (usalos tal cual en filtros SQL: distinguen
-        mayúsculas) y filas de ejemplo. Llamala antes de escribir `query_sql`."""
+        mayúsculas) y filas de ejemplo."""
         return mirror.describe(table)
 
     query_doc = (
         "Consulta SQL de solo lectura (DuckDB) sobre las tablas del mirror. Límites: una sola "
         f"sentencia SELECT, máx. {mirror.limits.max_rows} filas, {mirror.limits.timeout_s:g}s. Sin acceso a "
-        "archivos ni red. Agregá y filtrá en SQL en lugar de traer filas crudas; los períodos son "
+        "archivos ni red. Los períodos son "
         "texto ('202609')."
     )
 

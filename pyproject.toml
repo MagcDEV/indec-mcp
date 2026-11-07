@@ -1,6 +1,6 @@
 [project]
 name = "indec-mcp"
-version = "0.4.1"
+version = "0.4.2"
 description = "Unofficial AI/MCP layer over the INDEC (Argentina) Catálogo API-INDEC"
 readme = "README.md"
 requires-python = ">=3.12"

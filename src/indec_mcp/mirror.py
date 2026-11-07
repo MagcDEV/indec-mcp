@@ -292,8 +292,8 @@ class Mirror:
             "notes": [
                 "Cada columna de valor tiene una gemela `<col>_null` con la razón de nulo "
                 "(signos convencionales INDEC: * provisorio, ** preliminar, e estimado, ...).",
-                "`observaciones` puede decir 'Dato provisorio': mencionalo al citar la cifra.",
-                "Preferí las variaciones publicadas (filas v_m, v_ia, ...) antes que calcularlas: "
+                "`observaciones` puede decir 'Dato provisorio'.",
+                "Las variaciones publicadas (filas v_m, v_ia, ...) pueden diferir de las calculadas desde el índice: "
                 "INDEC advierte diferencias por redondeo.",
             ],
             "source": SOURCE,

@@ -60,3 +60,18 @@ def test_every_tool_has_a_title_and_read_only_annotation_for_directory_review(se
         assert t.title, t.name
         assert t.annotations.title == t.title, t.name  # the directory reads annotations.title
         assert t.annotations.read_only_hint is True and t.annotations.destructive_hint is False, t.name
+
+
+def test_tool_descriptions_are_purely_descriptive(server):
+    # Anthropic's directory policy: tool descriptions must not instruct the model or reference other tools.
+    # Behavioral guidance lives in the server-level `instructions` instead.
+    import re
+
+    imperative = re.compile(r"\b(Usala|decilo|mencionalo|Mencioná|Llamala|usá|Usá|pasá|Agregá|Preferí|Probá|Indicá|aclaralo)\b")
+    tools = run(server.list_tools())
+    names = {t.name for t in tools}
+    for t in tools:
+        texts = [t.description or ""] + [str(p.get("description", "")) for p in t.input_schema.get("properties", {}).values()]
+        for text in texts:
+            assert not imperative.search(text), (t.name, imperative.search(text).group(0))
+            assert not any(n in text for n in names - {t.name}), (t.name, "references another tool")
